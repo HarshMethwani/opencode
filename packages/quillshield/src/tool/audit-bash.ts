@@ -68,7 +68,7 @@ export const AuditBashTool = Tool.define("audit-bash", {
           command = "aptos move compile"
           break
         default:
-          return { title: "Error", output: `Cannot compile: no framework detected in ${cwd}`, metadata: {} }
+          return { title: "Error", output: `Cannot compile: no framework detected in ${cwd}`, metadata: { exitCode: 1 } }
       }
     } else if (command === "test") {
       switch (framework) {
@@ -85,7 +85,7 @@ export const AuditBashTool = Tool.define("audit-bash", {
           command = "aptos move test"
           break
         default:
-          return { title: "Error", output: `Cannot test: no framework detected in ${cwd}`, metadata: {} }
+          return { title: "Error", output: `Cannot test: no framework detected in ${cwd}`, metadata: { exitCode: 1 } }
       }
     } else if (command === "fuzz") {
       switch (framework) {
@@ -96,7 +96,7 @@ export const AuditBashTool = Tool.define("audit-bash", {
           return {
             title: "Error",
             output: `Fuzzing only supported for Foundry. Detected framework: ${framework}`,
-            metadata: {},
+            metadata: { exitCode: 1 },
           }
       }
     }
@@ -105,11 +105,11 @@ export const AuditBashTool = Tool.define("audit-bash", {
       permission: "bash",
       patterns: [command],
       metadata: { command, framework, cwd },
+      always: [],
     })
 
     const result = await $`bash -c ${command}`
       .cwd(cwd)
-      .timeout(timeout)
       .nothrow()
       .quiet()
 

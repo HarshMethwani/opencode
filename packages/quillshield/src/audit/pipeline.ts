@@ -75,8 +75,8 @@ export namespace AuditPipeline {
       status: "pending",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      phaseOutputs: {},
-      userNotes: {},
+      phaseOutputs: { scope: "", analyze: "", trace: "", exploit: "", report: "" },
+      userNotes: { scope: "", analyze: "", trace: "", exploit: "", report: "" },
     }
     runs.set(run.id, run)
     return run

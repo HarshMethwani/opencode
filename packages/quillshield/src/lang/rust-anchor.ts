@@ -69,7 +69,7 @@ export const AnchorParser: LanguageParser = {
 
       // CPI calls
       const cpiMatch = line.match(/(\w+)::(\w+)\s*\(/)
-      if (cpiMatch && line.includes("cpi") || line.includes("CpiContext") || line.includes("invoke")) {
+      if (cpiMatch && (line.includes("cpi") || line.includes("CpiContext") || line.includes("invoke"))) {
         calls.push({
           target: cpiMatch[1]!,
           method: cpiMatch[2]!,

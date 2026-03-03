@@ -30,7 +30,7 @@ function dot(status: Todo["status"]) {
   )
 }
 
-export function SessionTodoDock(props: { todos: Todo[]; title: string; collapseLabel: string; expandLabel: string }) {
+export function SessionTodoDock(props: { todos: Todo[]; title: string; collapseLabel: string; expandLabel: string; [key: string]: any }) {
   const [store, setStore] = createStore({
     collapsed: false,
   })

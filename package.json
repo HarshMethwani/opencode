@@ -4,7 +4,7 @@
   "description": "AI-powered smart contract auditing agent",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.3.10",
+  "packageManager": "bun@1.2.22",
   "scripts": {
     "dev": "bun run --cwd packages/quillshield --conditions=browser src/index.ts",
     "dev:desktop": "bun --cwd packages/desktop tauri dev",
