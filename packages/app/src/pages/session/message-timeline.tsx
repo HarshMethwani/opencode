@@ -1,22 +1,21 @@
 import { For, createEffect, createMemo, on, onCleanup, Show, startTransition, type JSX } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useNavigate, useParams } from "@solidjs/router"
-import { Button } from "@opencode-ai/ui/button"
-import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Dialog } from "@opencode-ai/ui/dialog"
-import { InlineInput } from "@opencode-ai/ui/inline-input"
-import { SessionTurn } from "@opencode-ai/ui/session-turn"
-import { ScrollView } from "@opencode-ai/ui/scroll-view"
-import type { AssistantMessage, Message as MessageType, Part, TextPart, UserMessage } from "@opencode-ai/sdk/v2"
-import { showToast } from "@opencode-ai/ui/toast"
-import { Binary } from "@opencode-ai/util/binary"
-import { getFilename } from "@opencode-ai/util/path"
+import { Button } from "@quillshield/ui/button"
+import { FileIcon } from "@quillshield/ui/file-icon"
+import { Icon } from "@quillshield/ui/icon"
+import { IconButton } from "@quillshield/ui/icon-button"
+import { DropdownMenu } from "@quillshield/ui/dropdown-menu"
+import { Dialog } from "@quillshield/ui/dialog"
+import { InlineInput } from "@quillshield/ui/inline-input"
+import { SessionTurn } from "@quillshield/ui/session-turn"
+import { ScrollView } from "@quillshield/ui/scroll-view"
+import type { Part, TextPart, UserMessage } from "@quillshield/sdk/v2"
+import { showToast } from "@quillshield/ui/toast"
+import { getFilename } from "@quillshield/util/path"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { SessionContextUsage } from "@/components/session-context-usage"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useDialog } from "@quillshield/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { useSDK } from "@/context/sdk"
@@ -31,9 +30,6 @@ type MessageComment = {
     endLine: number
   }
 }
-
-const emptyMessages: MessageType[] = []
-const idle = { type: "idle" as const }
 
 const messageComments = (parts: Part[]): MessageComment[] =>
   parts.flatMap((part) => {
@@ -217,34 +213,8 @@ export function MessageTimeline(props: {
   const dialog = useDialog()
   const language = useLanguage()
 
-  const rendered = createMemo(() => props.renderedUserMessages.map((message) => message.id))
   const sessionKey = createMemo(() => `${params.dir}${params.id ? "/" + params.id : ""}`)
   const sessionID = createMemo(() => params.id)
-  const sessionMessages = createMemo(() => {
-    const id = sessionID()
-    if (!id) return emptyMessages
-    return sync.data.message[id] ?? emptyMessages
-  })
-  const pending = createMemo(() =>
-    sessionMessages().findLast(
-      (item): item is AssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
-    ),
-  )
-  const activeMessageID = createMemo(() => {
-    const parentID = pending()?.parentID
-    if (!parentID) return
-
-    const messages = sessionMessages()
-    const result = Binary.search(messages, parentID, (message) => message.id)
-    const message = result.found ? messages[result.index] : messages.find((item) => item.id === parentID)
-    if (!message || message.role !== "user") return
-    return message.id
-  })
-  const sessionStatus = createMemo(() => {
-    const id = sessionID()
-    if (!id) return idle
-    return sync.data.session_status[id] ?? idle
-  })
   const info = createMemo(() => {
     const id = sessionID()
     if (!id) return
@@ -681,23 +651,17 @@ export function MessageTimeline(props: {
                 </Button>
               </div>
             </Show>
-            <For each={rendered()}>
-              {(messageID) => {
-                const active = createMemo(() => activeMessageID() === messageID)
-                const queued = createMemo(() => {
-                  const item = pending()
-                  if (!item || active()) return false
-                  return messageID > item.id
-                })
-                const comments = createMemo(() => messageComments(sync.data.part[messageID] ?? []))
+            <For each={staging.messages()}>
+              {(message) => {
+                const comments = createMemo(() => messageComments(sync.data.part[message.id] ?? []))
                 const commentCount = createMemo(() => comments().length)
                 return (
                   <div
-                    id={props.anchor(messageID)}
-                    data-message-id={messageID}
+                    id={props.anchor(message.id)}
+                    data-message-id={message.id}
                     ref={(el) => {
-                      props.onRegisterMessage(el, messageID)
-                      onCleanup(() => props.onUnregisterMessage(messageID))
+                      props.onRegisterMessage(el, message.id)
+                      onCleanup(() => props.onUnregisterMessage(message.id))
                     }}
                     classList={{
                       "min-w-0 w-full max-w-full": true,
@@ -737,10 +701,7 @@ export function MessageTimeline(props: {
                     </Show>
                     <SessionTurn
                       sessionID={sessionID() ?? ""}
-                      messageID={messageID}
-                      active={active()}
-                      queued={queued()}
-                      status={active() ? sessionStatus() : undefined}
+                      messageID={message.id}
                       showReasoningSummaries={settings.general.showReasoningSummaries()}
                       shellToolDefaultOpen={settings.general.shellToolPartsExpanded()}
                       editToolDefaultOpen={settings.general.editToolPartsExpanded()}

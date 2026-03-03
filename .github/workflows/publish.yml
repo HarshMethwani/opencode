@@ -88,7 +88,7 @@ jobs:
       - name: Build
         id: build
         run: |
-          ./packages/opencode/script/build.ts
+          ./packages/quillshield/script/build.ts
         env:
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
           OPENCODE_RELEASE: ${{ needs.version.outputs.release }}
@@ -98,7 +98,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: opencode-cli
-          path: packages/opencode/dist
+          path: packages/quillshield/dist
 
     outputs:
       version: ${{ needs.version.outputs.version }}
@@ -279,7 +279,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: opencode-cli
-          path: packages/opencode/dist
+          path: packages/quillshield/dist
 
       - name: Cache apt packages (AUR)
         uses: actions/cache@v4

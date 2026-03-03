@@ -1,12 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "opencode",
-  "description": "AI-powered development tool",
+  "name": "quillshield",
+  "description": "AI-powered smart contract auditing agent",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.10",
   "scripts": {
-    "dev": "bun run --cwd packages/opencode --conditions=browser src/index.ts",
+    "dev": "bun run --cwd packages/quillshield --conditions=browser src/index.ts",
     "dev:desktop": "bun --cwd packages/desktop tauri dev",
     "dev:web": "bun --cwd packages/app dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
@@ -19,9 +19,7 @@
   "workspaces": {
     "packages": [
       "packages/*",
-      "packages/console/*",
-      "packages/sdk/js",
-      "packages/slack"
+      "packages/sdk/js"
     ],
     "catalog": {
       "@types/bun": "1.3.9",
@@ -75,14 +73,12 @@
     "husky": "9.1.7",
     "prettier": "3.6.2",
     "semver": "^7.6.0",
-    "sst": "3.18.10",
     "turbo": "2.5.6"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "3.933.0",
-    "@opencode-ai/plugin": "workspace:*",
-    "@opencode-ai/script": "workspace:*",
-    "@opencode-ai/sdk": "workspace:*",
+    "@quillshield/plugin": "workspace:*",
+    "@quillshield/script": "workspace:*",
+    "@quillshield/sdk": "workspace:*",
     "typescript": "catalog:"
   },
   "repository": {

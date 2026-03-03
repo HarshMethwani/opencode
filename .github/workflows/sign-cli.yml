@@ -23,14 +23,14 @@ jobs:
 
       - name: Build
         run: |
-          ./packages/opencode/script/build.ts
+          ./packages/quillshield/script/build.ts
 
       - name: Upload unsigned Windows CLI
         id: upload_unsigned_windows_cli
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-opencode-windows-cli
-          path: packages/opencode/dist/opencode-windows-x64/bin/opencode.exe
+          path: packages/quillshield/dist/opencode-windows-x64/bin/opencode.exe
           if-no-files-found: error
 
       - name: Submit SignPath signing request

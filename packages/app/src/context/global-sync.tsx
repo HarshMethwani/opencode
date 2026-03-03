@@ -6,9 +6,9 @@ import type {
   ProviderAuthResponse,
   ProviderListResponse,
   Todo,
-} from "@opencode-ai/sdk/v2/client"
-import { showToast } from "@opencode-ai/ui/toast"
-import { getFilename } from "@opencode-ai/util/path"
+} from "@quillshield/sdk/v2/client"
+import { showToast } from "@quillshield/ui/toast"
+import { getFilename } from "@quillshield/util/path"
 import {
   createContext,
   getOwner,

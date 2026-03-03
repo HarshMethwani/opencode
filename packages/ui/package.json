@@ -1,5 +1,5 @@
 {
-  "name": "@opencode-ai/ui",
+  "name": "@quillshield/ui",
   "version": "1.2.15",
   "type": "module",
   "license": "MIT",
@@ -42,8 +42,8 @@
   },
   "dependencies": {
     "@kobalte/core": "catalog:",
-    "@opencode-ai/sdk": "workspace:*",
-    "@opencode-ai/util": "workspace:*",
+    "@quillshield/sdk": "workspace:*",
+    "@quillshield/util": "workspace:*",
     "@pierre/diffs": "catalog:",
     "@shikijs/transformers": "3.9.2",
     "@solid-primitives/bounds": "0.1.3",

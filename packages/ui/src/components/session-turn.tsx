@@ -1,10 +1,9 @@
-import { AssistantMessage, type FileDiff, Message as MessageType, Part as PartType } from "@opencode-ai/sdk/v2/client"
-import type { SessionStatus } from "@opencode-ai/sdk/v2"
+import { AssistantMessage, type FileDiff, Message as MessageType, Part as PartType } from "@quillshield/sdk/v2/client"
 import { useData } from "../context"
 import { useFileComponent } from "../context/file"
 
-import { Binary } from "@opencode-ai/util/binary"
-import { getDirectory, getFilename } from "@opencode-ai/util/path"
+import { Binary } from "@quillshield/util/binary"
+import { getDirectory, getFilename } from "@quillshield/util/path"
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { AssistantParts, Message, Part, PART_MAPPING } from "./message-part"
@@ -16,7 +15,6 @@ import { DiffChanges } from "./diff-changes"
 import { Icon } from "./icon"
 import { TextShimmer } from "./text-shimmer"
 import { SessionRetry } from "./session-retry"
-import { TextReveal } from "./text-reveal"
 import { createAutoScroll } from "../hooks"
 import { useI18n } from "../context/i18n"
 
@@ -144,9 +142,6 @@ export function SessionTurn(
     showReasoningSummaries?: boolean
     shellToolDefaultOpen?: boolean
     editToolDefaultOpen?: boolean
-    active?: boolean
-    queued?: boolean
-    status?: SessionStatus
     onUserInteracted?: () => void
     classes?: {
       root?: string
@@ -192,7 +187,6 @@ export function SessionTurn(
   })
 
   const pending = createMemo(() => {
-    if (typeof props.active === "boolean" && typeof props.queued === "boolean") return
     const messages = allMessages() ?? emptyMessages
     return messages.findLast(
       (item): item is AssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
@@ -210,7 +204,6 @@ export function SessionTurn(
   })
 
   const active = createMemo(() => {
-    if (typeof props.active === "boolean") return props.active
     const msg = message()
     const parent = pendingUser()
     if (!msg || !parent) return false
@@ -218,7 +211,6 @@ export function SessionTurn(
   })
 
   const queued = createMemo(() => {
-    if (typeof props.queued === "boolean") return props.queued
     const id = message()?.id
     if (!id) return false
     if (!pendingUser()) return false
@@ -313,11 +305,7 @@ export function SessionTurn(
     return unwrap(String(msg))
   })
 
-  const status = createMemo(() => {
-    if (props.status !== undefined) return props.status
-    if (typeof props.active === "boolean" && !props.active) return idle
-    return data.store.session_status[props.sessionID] ?? idle
-  })
+  const status = createMemo(() => data.store.session_status[props.sessionID] ?? idle)
   const working = createMemo(() => status().type !== "idle" && active())
   const showReasoningSummaries = createMemo(() => props.showReasoningSummaries ?? true)
 
@@ -422,13 +410,8 @@ export function SessionTurn(
                 <Show when={showThinking()}>
                   <div data-slot="session-turn-thinking">
                     <TextShimmer text={i18n.t("ui.sessionTurn.status.thinking")} />
-                    <Show when={!showReasoningSummaries()}>
-                      <TextReveal
-                        text={reasoningHeading()}
-                        class="session-turn-thinking-heading"
-                        travel={25}
-                        duration={700}
-                      />
+                    <Show when={!showReasoningSummaries() && reasoningHeading()}>
+                      {(text) => <span data-slot="session-turn-thinking-heading">{text()}</span>}
                     </Show>
                   </div>
                 </Show>
