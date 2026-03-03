@@ -1,150 +1,150 @@
-# 03 — Feature Gaps & Missing Pieces
+# 03 — Feature Gaps & Missing Pieces (Revised Assessment)
 
-## What's Built vs What's Skeleton
+_Last updated: 2026-03-04_
 
-### Fully Built (working implementations)
+## Current State: The Agent Already Works for Interactive Auditing
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Agent definitions | Complete | audit, recon, scope, trace, exploit, report + infrastructure agents |
-| System prompts | Complete | All 6 audit prompts written with domain expertise |
-| Scope Tracker tool | Complete | In-memory state per session, add/remove/list/status |
-| Finding tool | Complete | Full CRUD with severity, PoC tracking, session scoped |
-| Contract Info tool | Complete | Delegates to language parsers, structured output |
-| Storage Layout tool | Complete | EVM slot analysis, proxy collision detection |
-| Audit Bash tool | Complete | Framework auto-detection, shortcut commands |
-| Solidity parser | Complete | Functions, state vars, events, errors, inheritance, external calls, storage |
-| Pipeline engine | Complete | 5-phase state machine with context passing between phases |
-
-### Partially Built (needs more work)
-
-| Component | Status | What's Missing |
-|-----------|--------|----------------|
-| Call Graph tool | 80% | Only scans .sol files; needs multi-language support |
-| Vyper parser | 70% | extractCalls is basic; needs better interface call detection |
-| Anchor parser | 70% | CPI call detection is heuristic; needs better account validation analysis |
-| CosmWasm parser | 60% | State item detection is basic; needs better message routing analysis |
-| Move parser | 60% | Global storage access tracked but no ability constraint analysis |
-| Cairo parser | 60% | Dispatcher detection works; needs better L1-L2 messaging analysis |
-
-### Not Built (planned but empty)
-
-| Component | Priority | Description |
-|-----------|----------|-------------|
-| Database persistence for findings | HIGH | Findings are in-memory only — lost on restart. Need Drizzle schema + migration. |
-| Database persistence for audit scope | HIGH | Same — scope state is in-memory only. |
-| Database persistence for pipeline runs | HIGH | Pipeline runs are in-memory only. |
-| `/audit` CLI command | HIGH | The pipeline.ts engine exists but there's no CLI command to invoke it. |
-| `/audit` TUI integration | MEDIUM | No checkpoint UI in the TUI. |
-| Pipeline ↔ Session integration | HIGH | Pipeline generates prompts but doesn't actually invoke sessions/agents. |
-| Report export (MD → PDF) | LOW | Report agent generates markdown; no PDF conversion. |
-| Finding deduplication | MEDIUM | No logic to detect duplicate findings across sessions. |
-| Severity calibration | LOW | No automated severity scoring — relies on LLM judgment. |
-| Integration with Slither/Mythril | MEDIUM | No integration with external static analysis tools. |
-| Integration with Foundry forge test | MEDIUM | audit-bash can run commands but doesn't parse/structure results. |
-| Web UI audit views | LOW | No custom views for findings list, scope overview, pipeline progress. |
+Before listing gaps, the important context: **QuillShield is usable today for manual, interactive smart contract auditing.** You can start a session, switch between audit/recon/scope/trace/exploit/report agents, and use all 6 audit tools. The gaps below are about automation, persistence, and polish — not core functionality.
 
 ---
 
-## Critical Missing: Database Tables for Audit State
+## What's Built — Verified Working
 
-The plan specified 3 new tables. None have been created yet.
+| Component | Lines | Verdict |
+|-----------|-------|---------|
+| Agent definitions (6 agents) | ~370 | Real. All 6 agents defined with correct permissions, registered, switchable. |
+| System prompts (6 .txt files) | ~310 | Real. Substantive domain content, properly imported and wired into session system. |
+| Scope Tracker tool | ~104 | Real. In-memory state, 5 actions (init/add/remove/list/status). Works within a session. |
+| Finding tool | ~134 | Real. Full CRUD with ULID generation, severity levels, PoC tracking. In-memory. |
+| Contract Info tool | ~100 | Real. Delegates to language parsers, returns structured metadata. |
+| Call Graph tool | ~204 | Real. Builds call trees with depth limiting, recursion detection, reentrancy surface. Solidity-only. |
+| Storage Layout tool | ~173 | Real. EVM slot calculation, packed variable handling, proxy collision detection. |
+| Audit Bash tool | ~150 | Real. Framework auto-detection (Foundry/Hardhat/Anchor/Move), shortcut commands, permission gating. |
+| Solidity parser | ~273 | Real. The best parser — functions, state vars, events, errors, inheritance, external calls, storage slots. |
+| Vyper parser | ~168 | Real. Decorator-based visibility, raw_call patterns. Simpler than Solidity but functional. |
+| Anchor parser | ~191 | Real. Program module detection, account structs, CPI call tracking. Heuristic-based. |
+| CosmWasm parser | ~169 | Real. Entry points, message enum parsing, storage items. Basic but functional. |
+| Move parser | ~199 | Real. Module/function/struct parsing. Missing ability constraint analysis. |
+| Cairo parser | ~259 | Real. Contract/interface detection, dispatcher calls, syscall patterns. Basic L1-L2. |
+| Tool registry | — | All 6 audit tools registered at lines 121-126 of registry.ts. |
 
-### What's needed:
+**Total audit-specific code: ~2,800 lines of real, working implementations.**
 
-```sql
--- Table: audit_run
-CREATE TABLE audit_run (
-  id TEXT PRIMARY KEY,
-  session_id TEXT NOT NULL REFERENCES session(id),
-  directory TEXT NOT NULL,
-  phase TEXT NOT NULL DEFAULT 'scope',
-  status TEXT NOT NULL DEFAULT 'pending',
-  phase_outputs TEXT, -- JSON
-  user_notes TEXT, -- JSON
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+### Pipeline Engine — Needs Honest Clarification
 
--- Table: audit_finding
-CREATE TABLE audit_finding (
-  id TEXT PRIMARY KEY,
-  audit_run_id TEXT REFERENCES audit_run(id),
-  session_id TEXT NOT NULL REFERENCES session(id),
-  severity TEXT NOT NULL,
-  title TEXT NOT NULL,
-  description TEXT,
-  impact TEXT,
-  contracts TEXT, -- JSON array
-  status TEXT NOT NULL DEFAULT 'draft',
-  poc_status TEXT NOT NULL DEFAULT 'none',
-  recommendation TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
+| Component | Lines | Verdict |
+|-----------|-------|---------|
+| Pipeline state machine | ~204 | **Overstated as "Complete" in previous version.** It's a state machine that manages Run objects in memory and generates prompt strings. It does NOT invoke sessions, create agents, or run anything. It's the "recipe book with no kitchen." |
 
--- Table: audit_scope
-CREATE TABLE audit_scope (
-  id TEXT PRIMARY KEY,
-  audit_run_id TEXT REFERENCES audit_run(id),
-  session_id TEXT NOT NULL REFERENCES session(id),
-  path TEXT NOT NULL,
-  name TEXT NOT NULL,
-  language TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
-  findings_count INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-```
-
-### Steps to add:
-1. Create Drizzle schema file: `packages/quillshield/src/audit/audit.sql.ts`
-2. Register in `packages/quillshield/src/storage/schema.ts`
-3. Run `cd packages/quillshield && bun drizzle-kit generate` to create migration
-4. Update scope-tracker.ts and finding.ts tools to use DB instead of in-memory maps
+The pipeline has: create/get/list runs, advance/skip phases, set outputs/notes, generate phase prompts, produce summaries, emit bus events. What it doesn't have: any code that actually executes a phase by creating a session and invoking an agent.
 
 ---
 
-## Critical Missing: Pipeline ↔ Session Integration
+## What's Missing — Prioritized by Actual Impact
 
-The pipeline engine (`audit/pipeline.ts`) generates phase prompts but has no code to actually:
-1. Create a session for each phase
-2. Invoke the correct subagent
-3. Collect the agent's output
-4. Store it as phase output
-5. Emit checkpoint events for the TUI
+### Tier 1: Actually Hurts (blocks real usage)
 
-This is the **biggest functional gap**. Without this, the pipeline is a state machine that never runs.
+| Gap | Why it matters | Effort |
+|-----|---------------|--------|
+| **DB persistence for findings** | Findings vanish on session close. You can't do a multi-session audit. This is the single biggest pain point. | ~100 lines (Drizzle schema + update finding.ts) |
+| **DB persistence for scope** | Same issue — scope state lost on restart. Less painful than findings since re-scanning is fast, but still annoying. | ~80 lines (same pattern as findings) |
 
-### What's needed:
-- A function like `runPhase(run: Run)` that:
-  - Creates a session via the existing session system
-  - Sets the agent to the appropriate subagent for the phase
-  - Sends the phase prompt as a user message
-  - Waits for the agent to complete (or hit step limit)
-  - Extracts the agent's output
-  - Stores it via `setPhaseOutput()`
-  - Emits `CheckpointReached` event
-  - Pauses for user review
+### Tier 2: Would Be Nice (improves workflow but not blocking)
 
-### Where to hook in:
-- The session system is in `packages/quillshield/src/session/index.ts`
-- Look at how the existing `Session.chat()` or `Session.prompt()` works
-- The pipeline should use the same mechanism
+| Gap | Why it matters | Effort |
+|-----|---------------|--------|
+| **Pipeline ↔ Session integration** | Lets you run `scope -> analyze -> trace -> exploit -> report` automatically instead of manually switching agents. Nice automation, but manual switching already works. | ~200-300 lines (needs to understand Session.chat() internals) |
+| **`/audit` CLI command** | Entry point for the pipeline. Useless without Tier 2 pipeline integration. | ~100 lines (yargs command + pipeline invocation) |
+| **Slither/Mythril integration** | Structured parsing of static analysis output to feed into the audit. Currently you can run these via audit-bash but output isn't parsed. | ~150 lines per tool |
+| **Foundry forge test integration** | Same — structured result parsing from `forge test` output. | ~100 lines |
+
+### Tier 3: Don't Build Yet (premature or unnecessary)
+
+| Gap | Why it's premature |
+|-----|-------------------|
+| **DB persistence for pipeline runs** | Pipeline doesn't invoke sessions yet. Persisting its state before it works is pointless. |
+| **`/audit` TUI checkpoint UI** | Depends on pipeline actually working. Build after pipeline integration. |
+| **Finding deduplication** | The LLM won't duplicate findings if instructed properly. Solve with prompting, not code. |
+| **Severity calibration** | LLM judgment is good enough. Automated scoring adds complexity for marginal value. |
+| **Report export (MD to PDF)** | `pandoc` exists. One shell command. Not worth custom code. |
+| **Web UI audit views** | Project is TUI/CLI only. Not needed. |
 
 ---
 
-## Critical Missing: /audit CLI Command
+## Recommended Implementation Order
 
-Need to add to `packages/quillshield/src/cli/cmd/`:
+### Step 1: DB Persistence for Findings (the only truly critical gap)
+
+**Schema** — create `packages/quillshield/src/audit/audit.sql.ts`:
 
 ```typescript
-// audit-pipeline.ts
-// CLI command: `quillshield audit [directory]`
-// - Creates a pipeline run
-// - Starts scope phase
-// - Shows progress
-// - Pauses at checkpoints
+import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
+
+export const auditFinding = sqliteTable("audit_finding", {
+  id: text("id").primaryKey(),
+  session_id: text("session_id").notNull(),
+  severity: text("severity").notNull(),           // critical|high|medium|low|informational
+  title: text("title").notNull(),
+  description: text("description"),
+  impact: text("impact"),
+  contracts: text("contracts"),                    // JSON array
+  status: text("status").notNull().default("draft"), // draft|confirmed|false-positive
+  poc_status: text("poc_status").notNull().default("none"), // none|written|passing|failing
+  recommendation: text("recommendation"),
+  created_at: text("created_at").notNull(),
+  updated_at: text("updated_at").notNull(),
+})
 ```
 
-Also need to register it as a yargs command in the CLI bootstrap.
+**Steps:**
+1. Create the schema file above
+2. Register in `packages/quillshield/src/storage/schema.ts`
+3. Run `cd packages/quillshield && bun drizzle-kit generate`
+4. Update `finding.ts`: replace `Map<string, Finding[]>` with Drizzle queries
+5. Test: add a finding, restart session, verify it persists
+
+### Step 2: DB Persistence for Scope (small, same pattern)
+
+Add `auditScope` table to the same schema file:
+
+```typescript
+export const auditScope = sqliteTable("audit_scope", {
+  id: text("id").primaryKey(),
+  session_id: text("session_id").notNull(),
+  path: text("path").notNull(),
+  name: text("name").notNull(),
+  language: text("language").notNull(),
+  status: text("status").notNull().default("pending"),
+  findings_count: integer("findings_count").notNull().default(0),
+  created_at: text("created_at").notNull(),
+})
+```
+
+Update `scope-tracker.ts` the same way as finding.ts.
+
+### Step 3: Skip Everything Else For Now
+
+The pipeline automation, CLI command, parser improvements, and tool integrations are all secondary. Do real audits first with the manual workflow. Fix what actually breaks. The architecture supports adding all of this later without refactoring.
+
+---
+
+## What the Previous Doc Got Wrong
+
+1. **Pipeline engine was listed as "Complete"** — It's a state machine with no execution capability. Should have been listed as "30% complete" since it only manages state and generates prompts.
+
+2. **DB persistence for pipeline runs was listed as "HIGH" priority** — It's actually LOW. The pipeline doesn't run anything yet, so persisting its state is premature.
+
+3. **Several items were listed as HIGH/MEDIUM that are actually unnecessary:**
+   - Finding deduplication: solve with prompting
+   - Severity calibration: LLM handles this fine
+   - Web UI audit views: project is TUI-only
+
+4. **The doc missed the bigger picture:** The agent is already functional for interactive auditing. The gaps are about automation and persistence, not core capability. The framing of "Critical Missing" was too alarmist for things that are really "nice to have."
+
+---
+
+## References
+
+- Parser details: see `04-language-parser-improvements.md`
+- Tool enhancement details: see `05-tool-improvements-and-new-tools.md`
+- Pipeline integration deep-dive: see `06-pipeline-and-session-integration.md`

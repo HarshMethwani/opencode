@@ -3,3 +3,4 @@ export { SessionTable, MessageTable, PartTable, TodoTable, PermissionTable } fro
 export { SessionShareTable } from "../share/share.sql"
 export { ProjectTable } from "../project/project.sql"
 export { WorkspaceTable } from "../control-plane/workspace.sql"
+export { FindingTable, ScopeTable } from "../audit/audit.sql"

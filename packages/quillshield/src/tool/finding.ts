@@ -1,6 +1,8 @@
 import z from "zod"
 import { Tool } from "./tool"
 import { ulid } from "ulid"
+import { Database, eq } from "@/storage/db"
+import { FindingTable } from "@/audit/audit.sql"
 
 export interface Finding {
   id: string
@@ -12,19 +14,27 @@ export interface Finding {
   status: "draft" | "confirmed" | "false-positive"
   pocStatus: "none" | "written" | "passing" | "failing"
   recommendation: string
-  createdAt: string
+  createdAt: number
 }
 
-const findingsState = new Map<string, Finding[]>()
-
-function getFindings(sessionID: string): Finding[] {
-  if (!findingsState.has(sessionID)) findingsState.set(sessionID, [])
-  return findingsState.get(sessionID)!
+function fromRow(row: typeof FindingTable.$inferSelect): Finding {
+  return {
+    id: row.id,
+    severity: row.severity as Finding["severity"],
+    title: row.title,
+    description: row.description,
+    impact: row.impact,
+    contracts: row.contracts,
+    status: row.status as Finding["status"],
+    pocStatus: row.poc_status as Finding["pocStatus"],
+    recommendation: row.recommendation,
+    createdAt: row.time_created,
+  }
 }
 
 export const FindingTool = Tool.define("finding", {
   description:
-    "Manage audit findings — add, update, list, or get details of security findings. Findings persist across the audit session.",
+    "Manage audit findings — add, update, list, or get details of security findings. Findings persist across sessions in the database.",
   parameters: z.object({
     action: z.enum(["add", "update", "list", "get"]).describe("The action to perform"),
     id: z.string().optional().describe("Finding ID (for update/get actions)"),
@@ -41,51 +51,63 @@ export const FindingTool = Tool.define("finding", {
     recommendation: z.string().optional().describe("Fix recommendation (for add/update)"),
   }),
   async execute(args, ctx) {
-    const findings = getFindings(ctx.sessionID)
-
     switch (args.action) {
       case "add": {
         if (!args.title || !args.severity)
           return { title: "Error", output: "Title and severity are required for add action", metadata: {} }
-        const finding: Finding = {
-          id: ulid(),
-          severity: args.severity,
-          title: args.title,
-          description: args.description ?? "",
-          impact: args.impact ?? "",
-          contracts: args.contracts ?? [],
-          status: "draft",
-          pocStatus: "none",
-          recommendation: args.recommendation ?? "",
-          createdAt: new Date().toISOString(),
-        }
-        findings.push(finding)
+        const id = ulid()
+        Database.use((db) =>
+          db
+            .insert(FindingTable)
+            .values({
+              id,
+              session_id: ctx.sessionID,
+              severity: args.severity!,
+              title: args.title!,
+              description: args.description ?? "",
+              impact: args.impact ?? "",
+              contracts: args.contracts ?? [],
+              status: "draft",
+              poc_status: "none",
+              recommendation: args.recommendation ?? "",
+            })
+            .run(),
+        )
         return {
-          title: `[${finding.severity.toUpperCase()}] ${finding.title}`,
-          output: `Finding added: ${finding.id}\n[${finding.severity.toUpperCase()}] ${finding.title}\nStatus: ${finding.status} | PoC: ${finding.pocStatus}\nContracts: ${finding.contracts.join(", ") || "none specified"}`,
+          title: `[${args.severity.toUpperCase()}] ${args.title}`,
+          output: `Finding added: ${id}\n[${args.severity.toUpperCase()}] ${args.title}\nStatus: draft | PoC: none\nContracts: ${(args.contracts ?? []).join(", ") || "none specified"}`,
           metadata: {},
         }
       }
       case "update": {
         if (!args.id) return { title: "Error", output: "ID is required for update action", metadata: {} }
-        const finding = findings.find((f) => f.id === args.id)
-        if (!finding) return { title: "Error", output: `Finding not found: ${args.id}`, metadata: {} }
-        if (args.severity) finding.severity = args.severity
-        if (args.title) finding.title = args.title
-        if (args.description) finding.description = args.description
-        if (args.impact) finding.impact = args.impact
-        if (args.contracts) finding.contracts = args.contracts
-        if (args.status) finding.status = args.status
-        if (args.poc_status) finding.pocStatus = args.poc_status
-        if (args.recommendation) finding.recommendation = args.recommendation
+        const row = Database.use((db) =>
+          db.select().from(FindingTable).where(eq(FindingTable.id, args.id!)).get(),
+        )
+        if (!row) return { title: "Error", output: `Finding not found: ${args.id}`, metadata: {} }
+        const updates: Record<string, unknown> = {}
+        if (args.severity) updates.severity = args.severity
+        if (args.title) updates.title = args.title
+        if (args.description) updates.description = args.description
+        if (args.impact) updates.impact = args.impact
+        if (args.contracts) updates.contracts = args.contracts
+        if (args.status) updates.status = args.status
+        if (args.poc_status) updates.poc_status = args.poc_status
+        if (args.recommendation) updates.recommendation = args.recommendation
+        Database.use((db) => db.update(FindingTable).set(updates).where(eq(FindingTable.id, args.id!)).run())
+        const updated = fromRow({ ...row, ...updates } as typeof row)
         return {
-          title: `Updated: ${finding.title}`,
-          output: `Finding updated: ${finding.id}\n[${finding.severity.toUpperCase()}] ${finding.title}\nStatus: ${finding.status} | PoC: ${finding.pocStatus}`,
+          title: `Updated: ${updated.title}`,
+          output: `Finding updated: ${updated.id}\n[${updated.severity.toUpperCase()}] ${updated.title}\nStatus: ${updated.status} | PoC: ${updated.pocStatus}`,
           metadata: {},
         }
       }
       case "list": {
-        if (findings.length === 0) return { title: "No findings", output: "No findings recorded yet.", metadata: {} }
+        const rows = Database.use((db) =>
+          db.select().from(FindingTable).where(eq(FindingTable.session_id, ctx.sessionID)).all(),
+        )
+        if (rows.length === 0) return { title: "No findings", output: "No findings recorded yet.", metadata: {} }
+        const findings = rows.map(fromRow)
         const bySeverity = { critical: 0, high: 0, medium: 0, low: 0, informational: 0 }
         for (const f of findings) bySeverity[f.severity]++
         const lines = findings.map(
@@ -104,8 +126,11 @@ export const FindingTool = Tool.define("finding", {
       }
       case "get": {
         if (!args.id) return { title: "Error", output: "ID is required for get action", metadata: {} }
-        const finding = findings.find((f) => f.id === args.id)
-        if (!finding) return { title: "Error", output: `Finding not found: ${args.id}`, metadata: {} }
+        const row = Database.use((db) =>
+          db.select().from(FindingTable).where(eq(FindingTable.id, args.id!)).get(),
+        )
+        if (!row) return { title: "Error", output: `Finding not found: ${args.id}`, metadata: {} }
+        const finding = fromRow(row)
         return {
           title: `[${finding.severity.toUpperCase()}] ${finding.title}`,
           output: [
@@ -115,7 +140,7 @@ export const FindingTool = Tool.define("finding", {
             `Status: ${finding.status}`,
             `PoC Status: ${finding.pocStatus}`,
             `Contracts: ${finding.contracts.join(", ") || "none"}`,
-            `Created: ${finding.createdAt}`,
+            `Created: ${new Date(finding.createdAt).toISOString()}`,
             "",
             "Description:",
             finding.description,
