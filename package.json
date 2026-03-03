@@ -7,13 +7,8 @@
   "packageManager": "bun@1.2.22",
   "scripts": {
     "dev": "bun run --cwd packages/quillshield --conditions=browser src/index.ts",
-    "dev:desktop": "bun --cwd packages/desktop tauri dev",
-    "dev:web": "bun --cwd packages/app dev",
-    "dev:storybook": "bun --cwd packages/storybook storybook",
     "typecheck": "bun turbo typecheck",
     "prepare": "husky",
-    "random": "echo 'Random script'",
-    "hello": "echo 'Hello World!'",
     "test": "echo 'do not run tests from root' && exit 1"
   },
   "workspaces": {

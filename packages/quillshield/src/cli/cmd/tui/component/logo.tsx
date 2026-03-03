@@ -1,6 +1,7 @@
 import { TextAttributes, RGBA } from "@opentui/core"
-import { For, type JSX } from "solid-js"
+import { For, createMemo, type JSX } from "solid-js"
 import { useTheme, tint } from "@tui/context/theme"
+import { useLocal } from "@tui/context/local"
 import { logo, marks } from "@/cli/logo"
 
 // Shadow markers (rendered chars in parens):
@@ -11,6 +12,10 @@ const SHADOW_MARKER = new RegExp(`[${marks}]`)
 
 export function Logo() {
   const { theme } = useTheme()
+  const local = useLocal()
+  const logoColor = createMemo(() =>
+    local.agent.current().name === "recon" ? theme.warning : theme.primary,
+  )
 
   const renderLine = (line: string, fg: RGBA, bold: boolean): JSX.Element[] => {
     const shadow = tint(theme.background, fg, 0.25)
@@ -75,8 +80,8 @@ export function Logo() {
       <For each={logo.left}>
         {(line, index) => (
           <box flexDirection="row" gap={1}>
-            <box flexDirection="row">{renderLine(line, theme.textMuted, false)}</box>
-            <box flexDirection="row">{renderLine(logo.right[index()], theme.text, true)}</box>
+            <box flexDirection="row">{renderLine(line, logoColor(), true)}</box>
+            <box flexDirection="row">{renderLine(logo.right[index()], logoColor(), true)}</box>
           </box>
         )}
       </For>

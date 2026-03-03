@@ -9,18 +9,10 @@
     "./index.css": "./src/index.css"
   },
   "scripts": {
-    "typecheck": "tsgo -b",
     "start": "vite",
     "dev": "vite",
     "build": "vite build",
-    "serve": "vite preview",
-    "test": "bun run test:unit",
-    "test:unit": "bun test --preload ./happydom.ts ./src",
-    "test:unit:watch": "bun test --watch --preload ./happydom.ts ./src",
-    "test:e2e": "playwright test",
-    "test:e2e:local": "bun script/e2e-local.ts",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report e2e/playwright-report"
+    "serve": "vite preview"
   },
   "license": "MIT",
   "devDependencies": {
@@ -40,7 +32,6 @@
   "dependencies": {
     "@kobalte/core": "catalog:",
     "@quillshield/sdk": "workspace:*",
-    "@quillshield/ui": "workspace:*",
     "@quillshield/util": "workspace:*",
     "@shikijs/transformers": "3.9.2",
     "@solid-primitives/active-element": "2.1.3",

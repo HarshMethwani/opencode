@@ -18,9 +18,11 @@ import { ProviderTransform } from "../provider/transform"
 import { SystemPrompt } from "./system"
 import { InstructionPrompt } from "./instruction"
 import { Plugin } from "../plugin"
-import PROMPT_PLAN from "../session/prompt/plan.txt"
-import BUILD_SWITCH from "../session/prompt/build-switch.txt"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
+
+// Plan/build prompts removed — audit agents don't use plan mode
+const PROMPT_PLAN = ""
+const BUILD_SWITCH = ""
 import { defer } from "../util/defer"
 import { ToolRegistry } from "../tool/registry"
 import { MCP } from "../mcp"
