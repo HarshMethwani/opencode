@@ -5,7 +5,7 @@ import { $ } from "bun"
 import path from "path"
 import fs from "fs/promises"
 
-type Framework = "foundry" | "hardhat" | "anchor" | "move" | "unknown"
+type Framework = "foundry" | "hardhat" | "anchor" | "move" | "sui-move" | "unknown"
 
 async function detectFramework(directory: string): Promise<Framework> {
   const checks = [
@@ -18,7 +18,15 @@ async function detectFramework(directory: string): Promise<Framework> {
 
   for (const check of checks) {
     const exists = await fs.access(path.join(directory, check.file)).then(() => true).catch(() => false)
-    if (exists) return check.framework
+    if (exists) {
+      // Distinguish Sui Move from Aptos Move
+      if (check.framework === "move") {
+        const moveToml = await fs.readFile(path.join(directory, "Move.toml"), "utf-8").catch(() => "")
+        if (moveToml.includes("[dependencies.Sui]") || moveToml.includes("sui-framework") || moveToml.includes("sui ="))
+          return "sui-move"
+      }
+      return check.framework
+    }
   }
 
   return "unknown"
@@ -26,7 +34,7 @@ async function detectFramework(directory: string): Promise<Framework> {
 
 export const AuditBashTool = Tool.define("audit-bash", {
   description:
-    "Run compilation, test, and analysis commands for smart contract projects. Auto-detects the framework (Foundry, Hardhat, Anchor, Move). Provides shortcuts: 'compile', 'test', 'fuzz' that map to the correct framework commands.",
+    "Run compilation, test, and analysis commands for smart contract projects. Auto-detects the framework (Foundry, Hardhat, Anchor, Sui Move, Aptos Move). Provides shortcuts: 'compile', 'test', 'fuzz' that map to the correct framework commands.",
   parameters: z.object({
     command: z
       .string()
@@ -34,7 +42,7 @@ export const AuditBashTool = Tool.define("audit-bash", {
         "Command to run. Use shortcuts 'compile', 'test', 'fuzz' for framework-aware commands, or provide a full shell command.",
       ),
     framework: z
-      .enum(["foundry", "hardhat", "anchor", "move"])
+      .enum(["foundry", "hardhat", "anchor", "move", "sui-move"])
       .optional()
       .describe("Override framework auto-detection"),
     cwd: z.string().optional().describe("Working directory (default: project root)"),
@@ -64,16 +72,21 @@ export const AuditBashTool = Tool.define("audit-bash", {
         case "anchor":
           command = "anchor build"
           break
+        case "sui-move":
+          command = "sui move build"
+          break
         case "move":
           command = "aptos move compile"
           break
         default:
           return { title: "Error", output: `Cannot compile: no framework detected in ${cwd}`, metadata: { exitCode: 1 } }
       }
-    } else if (command === "test") {
+    } else if (command.startsWith("test")) {
+      // Support "test" and "test <filter>"
+      const filter = command.replace(/^test\s*/, "").trim()
       switch (framework) {
         case "foundry":
-          command = "forge test -vvv"
+          command = filter ? `forge test --match-test ${filter} -vvv` : "forge test -vvv"
           break
         case "hardhat":
           command = "npx hardhat test"
@@ -81,8 +94,11 @@ export const AuditBashTool = Tool.define("audit-bash", {
         case "anchor":
           command = "anchor test"
           break
+        case "sui-move":
+          command = filter ? `sui move test --filter ${filter}` : "sui move test"
+          break
         case "move":
-          command = "aptos move test"
+          command = filter ? `aptos move test --filter ${filter}` : "aptos move test"
           break
         default:
           return { title: "Error", output: `Cannot test: no framework detected in ${cwd}`, metadata: { exitCode: 1 } }

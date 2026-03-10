@@ -30,6 +30,20 @@ When tracing Anchor code:
 - Check if an attacker can substitute accounts (wrong vault, wrong authority, wrong mint)
 - Check if the instruction can be called out of expected order (init before setup, close before cleanup)
 
+## Sui Move-Specific Tracing
+
+When tracing Sui Move code:
+- Track object ownership transitions: owned → shared → frozen. Once shared, access is unrestricted.
+- Follow capability object flow: who creates it in init, who receives it, who can pass it to functions.
+- Check ability annotations at each step: can this struct be dropped (hot potato bypass)? copied (duplicate assets)? stored (uncontrolled transfer)?
+- For flash loans: verify the receipt/proof struct has NO abilities (not even `drop`). Trace the receipt lifecycle from borrow to repay.
+- For PTBs: consider what an attacker can chain in a single Programmable Transaction Block (up to 1024 commands atomically). Can they borrow → manipulate → exploit → repay?
+- For shared objects: check concurrent access patterns. Multiple entry functions mutating the same shared object can lead to state inconsistency.
+- For dynamic fields: trace key derivation — can an attacker add/overwrite/remove fields with controlled keys?
+- Check `tx_context::sender(ctx)` usage: is the sender actually validated, or just read and unused?
+- For coin operations: trace `coin::split`, `coin::join`, `coin::value` — does the protocol handle partial amounts?
+- For bitwise operations: verify `<<` and `>>` have explicit bounds checks (no automatic overflow abort).
+
 ## Output
 
 For each hypothesis, conclude with one of:

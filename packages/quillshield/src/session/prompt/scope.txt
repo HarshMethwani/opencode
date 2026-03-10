@@ -49,6 +49,36 @@ For Anchor programs, PAY SPECIAL ATTENTION to:
 - PDAs with insufficient seeds (e.g., no user key in seeds for user-specific data)
 - Missing has_one constraints linking accounts together
 
+## Sui Move-Specific Output
+
+For each Sui Move module:
+```
+Module: <package::module_name>
+File: <path>
+Entry Functions: <count> (transaction entry points)
+Public Functions: <count> (callable by other modules)
+
+Object Types:
+  <StructName>: has <abilities>
+    -> Shared: <yes/no>
+    -> Fields: <field list>
+    -> Security: <warnings if dangerous ability combo>
+
+Capabilities: <AdminCap, TreasuryCap, UpgradeCap>
+Dynamic Fields: <which objects use dynamic_field/dynamic_object_field>
+Init: <has init? OTW pattern used?>
+Transfers: <transfer::transfer vs public_transfer usage>
+Cross-Module Calls: <module::function calls>
+```
+
+For Sui Move modules, PAY SPECIAL ATTENTION to:
+- Structs with dangerous ability combinations (tokens with `copy`/`drop`, capabilities with `store`)
+- Entry functions that modify shared objects without capability checks
+- Dynamic field operations with user-controlled keys
+- Missing OTW pattern for coin creation
+- UpgradeCap custody (who owns it after init)
+- Hot potato structs that incorrectly have `drop` or `store`
+
 ## Guidelines
 
 - Be thorough — missing a contract/instruction means missing potential attack surface

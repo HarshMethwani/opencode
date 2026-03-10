@@ -12,6 +12,7 @@ const parsers: Record<string, LanguageParser> = {
   anchor: AnchorParser,
   cosmwasm: CosmWasmParser,
   move: MoveParser,
+  "sui-move": MoveParser,
   cairo: CairoParser,
 }
 
@@ -21,7 +22,11 @@ export function detectLanguage(filepath: string, content: string): string | unde
   // Extension-based detection
   if (ext === "sol") return "solidity"
   if (ext === "vy") return "vyper"
-  if (ext === "move") return "move"
+  if (ext === "move") {
+    if (content.includes("use sui::") || content.includes("sui::object") || content.includes("sui::transfer"))
+      return "sui-move"
+    return "move"
+  }
   if (ext === "cairo") return "cairo"
 
   // Content-based detection for .rs files
@@ -49,4 +54,4 @@ export { AnchorParser } from "./rust-anchor"
 export { CosmWasmParser } from "./rust-cosmwasm"
 export { MoveParser } from "./move"
 export { CairoParser } from "./cairo"
-export type { ContractMetadata, ExternalCall, StorageVar, FunctionInfo, StateVariable, AccountField, LanguageParser } from "./types"
+export type { ContractMetadata, ExternalCall, StorageVar, FunctionInfo, StateVariable, AccountField, SuiObjectInfo, SuiModuleInfo, LanguageParser } from "./types"

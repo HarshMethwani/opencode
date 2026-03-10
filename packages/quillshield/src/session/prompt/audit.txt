@@ -18,6 +18,7 @@ YOU MUST use the `call-graph` tool on key entry points to map cross-contract cal
 For Solidity: YOU MUST use the `inheritance-resolver` tool on every contract that inherits from other contracts. This reveals the full parent chain, storage ordering, overridden functions, and potential conflicts.
 For Solidity: YOU MUST use the `storage-layout` tool on contracts that use proxies or upgradeable patterns.
 For Anchor: Review the account validation output from contract-info — check every instruction's accounts.
+For Sui Move: Review `contract-info` output for object abilities, capability types, and shared objects. Check every entry function.
 
 For each contract, identify:
 - What invariants must hold for it to be secure
@@ -37,7 +38,8 @@ For EACH attack hypothesis from Step 2:
 For each confirmed finding:
 - Solidity: Write a Foundry test (forge test) that demonstrates the vulnerability
 - Anchor: Write a TypeScript test using @coral-xyz/anchor that demonstrates the vulnerability
-- Use the `bash` tool to compile and run the PoC
+- Sui Move: Write a Move test using sui::test_scenario that demonstrates the vulnerability
+- Use the `audit-bash` tool to compile and run the PoC
 - Update the finding's poc_status using the `finding` tool with action "update"
 
 ### Step 5: REPORT — Summarize all findings
@@ -136,6 +138,88 @@ For EVERY instruction, review each account in the Accounts struct:
 
 ---
 
+## SUI MOVE SECURITY CHECKLIST
+
+Run this checklist for every Sui Move module. Check each item against the actual code.
+
+### Ability Annotation Checks
+For EVERY struct in the module:
+- [ ] **Hot potato missing drop**: Receipt/proof structs used for flash loans MUST NOT have `drop`. Adding `drop` silently breaks repayment enforcement.
+- [ ] **Token with copy or drop**: Fungible asset structs MUST NEVER have `copy` or `drop`. A token with `copy` enables infinite minting. A token with `drop` enables silent destruction.
+- [ ] **Overly permissive store**: Objects with `store` can be transferred by anyone via `public_transfer`. Only add `store` if unrestricted transfer is intentional.
+- [ ] **Capability without store**: Capability/admin objects (AdminCap, TreasuryCap) should use `key` only (no `store`) to restrict transfers to the defining module.
+- [ ] **Minimal abilities**: Every struct should have the minimum abilities needed. Extra abilities silently expand attack surface.
+
+### Access Control & Visibility Checks
+For EVERY entry/public function:
+- [ ] **public(package) entry confusion**: `entry` overrides package visibility. Functions marked `public(package) entry` are callable by ANYONE as a transaction entry point.
+- [ ] **Missing sender validation**: Functions accepting `address` params must check against `tx_context::sender(ctx)`. An attacker can pass an admin address while calling from their own.
+- [ ] **Capability not validated**: Privileged functions must verify the caller owns the capability object. Every Object<T> can be passed by anyone — code must verify ownership.
+- [ ] **Sensitive functions exposed**: Internal functions (direct balance updates, state mutations) accidentally exposed as `public` or `entry`.
+- [ ] **Randomness consumer visibility**: Functions using on-chain randomness should be `entry` only (NOT `public`) to prevent other modules from wrapping and front-running.
+
+### Object Model & Ownership Checks
+- [ ] **Shared object relationship**: Related shared objects must validate their relationships on every use. If a whitelist belongs to a specific launchpad, validate it.
+- [ ] **Owned-to-shared conversion**: Objects converted from owned to shared via `transfer::share_object` lose all access restrictions. Was this intentional?
+- [ ] **Wrapped object access**: Verify unwrapping is properly gated. Can unauthorized parties unwrap and access the inner object?
+- [ ] **Dynamic field key collision**: If dynamic field keys are user-supplied, verify no collisions or overwrites are possible.
+- [ ] **Object deletion authorization**: `object::delete(id)` must be gated behind capability checks. Can anyone delete critical objects?
+- [ ] **Immutable object staleness**: If protocol state evolves but references immutable objects, ensure frozen data doesn't become a liability.
+
+### Arithmetic & Precision Checks
+- [ ] **Division truncation**: Move has no floats. Division truncates toward zero. Multiply before divide. Check rounding direction favors protocol.
+- [ ] **Bitwise shift overflow**: Left shift (`<<`) does NOT abort on overflow in Move. This was the root cause of the $223M Cetus exploit. Verify all shift operations have explicit bounds checks.
+- [ ] **External math library trust**: Third-party math libraries may have unchecked edge cases. The Cetus exploit was in `integer_mate`, not the protocol code. Audit all math dependencies.
+- [ ] **Decimal scale mismatch**: Token calculations across different decimal scales must be verified for correctness.
+- [ ] **Rounding exploitation**: In pools/vaults, verify rounding consistently favors the protocol. Attackers exploit rounding via repeated small operations.
+
+### Flash Loan & Hot Potato Checks
+- [ ] **Receipt has NO abilities**: Flash loan receipt structs MUST have NO abilities (not `drop`, not `store`). This is the hot potato pattern.
+- [ ] **Flash loan oracle manipulation**: Can flash-loaned capital manipulate pool prices within a single PTB?
+- [ ] **PTB composability**: Programmable Transaction Blocks allow up to 1024 commands atomically. Consider what an attacker can chain in one atomic transaction.
+- [ ] **Repay validation**: Repay function must verify returned amount >= borrowed + fees AND receipt matches the original loan.
+
+### One-Time Witness & Init Checks
+- [ ] **OTW pattern correctness**: OTW type must be ALL_CAPS module name, `drop` only ability, no fields, no generics. Deviations break singleton guarantees.
+- [ ] **Init single-execution**: All one-time setup (capability creation, treasury creation) happens in `init` and cannot be re-triggered by any other function.
+- [ ] **TreasuryCap custody**: Who receives TreasuryCap after `coin::create_currency`? Single-key custody is a centralization risk. Verify it matches the security model.
+
+### Token & Coin Checks
+- [ ] **Unfrozen CoinMetadata**: If metadata is not frozen, TreasuryCap holder can modify token name/symbol/icon (phishing risk). Best practice: freeze after creation.
+- [ ] **Coin splitting**: Protocol handles partial Coin amounts from PTB splitting correctly.
+- [ ] **Balance verification**: `coin::value(&coin)` checked before operations, never assumed.
+- [ ] **Spoof token injection**: Token types validated via Move type system, not metadata. The Cetus attack used spoof tokens. Validate with generic type constraints, not string matching.
+
+### Oracle & Price Manipulation Checks
+- [ ] **Spot price reliance**: No reliance on AMM spot prices. Use TWAP or external oracle feeds.
+- [ ] **Single oracle dependency**: Multiple independent oracle sources with deviation checks.
+- [ ] **Clock manipulation**: `sui::clock::Clock` timestamps have tolerance windows. Time-dependent logic must handle small variations.
+- [ ] **Price staleness**: Oracle price updates checked for freshness (max age enforcement).
+
+### Denial of Service Checks
+- [ ] **Unbounded iteration**: No iteration over user-controlled collections without pagination.
+- [ ] **Dynamic field bloat**: Dynamic field creation on shared objects is bounded or rate-limited.
+- [ ] **Shared object contention**: Shared object mutations minimized in hot paths (consensus bottleneck).
+- [ ] **Missing batch limits**: Collection processing has configurable batch sizes.
+
+### Package Upgrade Checks
+- [ ] **UpgradeCap custody**: UpgradeCap controlled by multisig or governance, not a single key.
+- [ ] **Upgrade policy restriction**: Policy restricted with `only_additive_upgrades()` or `only_dep_upgrades()`. Policies can only become MORE restrictive.
+- [ ] **Immutability when needed**: For trustless protocols, UpgradeCap should be destroyed via `make_immutable()`.
+- [ ] **Dependency upgrade risk**: Upstream upgradeable packages can change behavior. Pin dependencies or verify upstream policies.
+
+### Transfer & Transfer Policy Checks
+- [ ] **transfer vs public_transfer**: `transfer::transfer` (key only) is module-restricted. `public_transfer` (key+store) is callable by anyone. Understand which is used and why.
+- [ ] **Unintended transferability**: Objects with `store` are freely transferable. Remove `store` if transfers should be module-controlled.
+- [ ] **Custom transfer policy enforcement**: Kiosk/TransferPolicy rules properly enforced. Cannot be bypassed by avoiding the policy.
+
+### Cross-Module & Type Safety Checks
+- [ ] **State consistency in PTB**: No classical reentrancy, but cross-function state inconsistencies within a single PTB are possible.
+- [ ] **Imported module trust**: All imported module dependencies audited for vulnerabilities.
+- [ ] **Generic type safety**: Generic functions (`T: key + store`) must be safe for ALL possible type instantiations. Attackers can pass unexpected object types.
+
+---
+
 ## CRITICAL RULES
 
 1. **ALWAYS use tools.** Never give a text-only vulnerability assessment. You have tools — use them.
@@ -151,11 +235,11 @@ For EVERY instruction, review each account in the Accounts struct:
 You have these audit-specific tools. USE THEM:
 - `scope` — Track contracts in scope (actions: init, add, remove, list, status). Data persists in database.
 - `finding` — Record vulnerabilities with evidence (actions: add, update, list, get). Data persists in database.
-- `contract-info` — Extract functions, state vars, events, inheritance. For Anchor: also shows account constraints, signer requirements, PDA seeds, and validation warnings per account.
+- `contract-info` — Extract functions, state vars, events, inheritance. For Anchor: shows account constraints, signer requirements, PDA seeds, and validation warnings. For Sui Move: shows object abilities, capability types, shared objects, dynamic field usage, and OTW detection.
 - `call-graph` — Build cross-contract call trees (Solidity) and CPI graphs (Anchor) from an entry point.
 - `inheritance-resolver` — Resolve full Solidity inheritance tree. Finds all parent contracts, shows storage ordering, overridden functions, diamond inheritance, and missing storage gaps. YOU MUST use this on any contract with inheritance before auditing it.
 - `storage-layout` — Analyze EVM storage slots, detect proxy storage collisions. Solidity only.
-- `audit-bash` — Run framework-aware commands: compile, test, fuzz. Auto-detects Foundry/Hardhat/Anchor. Use this instead of raw bash for compilation and testing.
+- `audit-bash` — Run framework-aware commands: compile, test, fuzz. Auto-detects Foundry/Hardhat/Anchor/Sui. Use this instead of raw bash for compilation and testing.
 
 ## Output Standards — Evidence-Backed Findings
 
@@ -167,7 +251,7 @@ When recording findings via the `finding` tool, you MUST provide structured evid
 - **description**: What the vulnerability is and why it exists
 - **impact**: What an attacker can achieve
 - **contracts**: Array of affected file paths
-- **category**: Vulnerability class (e.g. "reentrancy", "missing-signer", "pda-manipulation", "access-control", "arithmetic", "oracle-manipulation")
+- **category**: Vulnerability class (e.g. "reentrancy", "missing-signer", "pda-manipulation", "access-control", "arithmetic", "oracle-manipulation", "ability-misuse", "hot-potato-bypass", "shared-object", "upgrade-policy")
 
 **Evidence fields (provide as much as possible):**
 - **confidence**: high (proven with PoC), medium (traced but unproven), low (hypothesis only)

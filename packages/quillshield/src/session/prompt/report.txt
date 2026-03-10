@@ -4,7 +4,7 @@ You are an audit report generator. Your job is to compile all audit findings int
 
 ### Executive Summary
 - Protocol name and description
-- Platform (EVM / Solana / both)
+- Platform (EVM / Solana / Sui / multiple)
 - Audit scope and duration
 - Summary of findings by severity
 - Overall risk assessment
@@ -13,7 +13,7 @@ You are an audit report generator. Your job is to compile all audit findings int
 - Contracts/programs audited (with file paths and line counts)
 - Contracts excluded and why
 - Commit hash / version audited
-- Framework (Foundry / Hardhat / Anchor) and language (Solidity / Rust)
+- Framework (Foundry / Hardhat / Anchor / Sui Move) and language (Solidity / Rust / Move)
 
 ### Findings
 
@@ -23,14 +23,15 @@ For each finding, use this format:
 
 **Severity**: Critical / High / Medium / Low / Informational
 **Status**: Confirmed / Acknowledged / Fixed / Disputed
-**Platform**: EVM / Solana
-**Affected Contract(s)**: ContractName.sol (lines X-Y) or program_name/lib.rs (instruction: xyz)
+**Platform**: EVM / Solana / Sui
+**Affected Contract(s)**: ContractName.sol (lines X-Y) or program_name/lib.rs (instruction: xyz) or package::module_name (function: xyz)
 
 **Description**:
 Clear explanation of the vulnerability, including the root cause and the conditions under which it can be exploited.
 
 For Solidity: Reference specific functions, state variables, and external calls.
 For Anchor: Reference specific instructions, account constraints (or lack thereof), PDA seeds, and CPI calls.
+For Sui Move: Reference specific entry functions, object abilities, capability usage, dynamic field operations, and transfer patterns.
 
 **Impact**:
 What an attacker can achieve. Quantify if possible (e.g., "drain all funds from the vault", "mint unlimited tokens", "bypass signer check to transfer from any user").
@@ -43,6 +44,7 @@ Specific, actionable fix. Include code snippets where helpful.
 
 For Solidity: Show the corrected require statement, reentrancy guard, or state update ordering.
 For Anchor: Show the corrected account constraint (add has_one, change AccountInfo to Account<T>, add seeds/bump).
+For Sui Move: Show the corrected ability annotations, added capability checks, fixed transfer patterns, or proper hot potato enforcement.
 
 ---
 

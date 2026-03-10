@@ -8,7 +8,7 @@ import { Glob } from "../util/glob"
 
 export const CallGraphTool = Tool.define("call-graph", {
   description:
-    "Build a call graph starting from a function, following internal calls, external calls to other contracts, delegatecall/staticcall patterns, CPI calls (Solana), and callback patterns (reentrancy surface). Supports Solidity (.sol) and Anchor/Rust (.rs) files.",
+    "Build a call graph starting from a function, following internal calls, external calls to other contracts, delegatecall/staticcall patterns, CPI calls (Solana), object transfers (Sui), and callback patterns (reentrancy surface). Supports Solidity (.sol), Anchor/Rust (.rs), and Sui Move (.move) files.",
   parameters: z.object({
     entryPoint: z
       .string()
@@ -24,16 +24,16 @@ export const CallGraphTool = Tool.define("call-graph", {
         : path.resolve(Instance.directory, args.directory)
       : Instance.directory
 
-    // Find all contract files — Solidity and Rust
-    const files = Glob.scanSync("**/*.{sol,rs}", {
+    // Find all contract files — Solidity, Rust, and Move
+    const files = Glob.scanSync("**/*.{sol,rs,move}", {
       cwd: searchDir,
       absolute: true,
       dot: false,
       symlink: false,
-    }).filter((f) => !f.includes("node_modules") && !f.includes("/lib/") && !f.includes("/target/"))
+    }).filter((f) => !f.includes("node_modules") && !f.includes("/lib/") && !f.includes("/target/") && !f.includes("/build/"))
 
     if (files.length === 0) {
-      return { title: "No contracts", output: `No .sol or .rs files found in: ${searchDir}`, metadata: {} }
+      return { title: "No contracts", output: `No .sol, .rs, or .move files found in: ${searchDir}`, metadata: {} }
     }
 
     // Build a map of all contracts and their functions/calls
@@ -117,10 +117,14 @@ export const CallGraphTool = Tool.define("call-graph", {
       ...tree,
     ]
 
-    // Identify reentrancy surface (Solidity) or CPI surface (Anchor)
+    // Identify attack surface by language
     const surface = findAttackSurface(contractMap, targetContract, targetFunction)
     if (surface.length) {
-      const label = contract?.language === "anchor" ? "CPI Surface (cross-program invocations)" : "Reentrancy Surface (external calls that could callback)"
+      const lang = contract?.language ?? ""
+      const label =
+        lang === "anchor" ? "CPI Surface (cross-program invocations)" :
+        lang === "sui-move" || lang === "move" ? "Sui Attack Surface (transfers, shared objects, dynamic fields)" :
+        "Reentrancy Surface (external calls that could callback)"
       lines.push("", `${label}:`)
       for (const entry of surface) {
         lines.push(`  ${entry}`)
@@ -193,12 +197,32 @@ function findAttackSurface(
   const contract = contractMap.get(contractName)
   if (!contract) return surface
 
+  const isSuiMove = contract.language === "sui-move" || contract.language === "move"
   const calls = contract.calls.filter((c) => c.from === functionName)
+
   for (const call of calls) {
     // External calls not in our project
     if (!contractMap.has(call.target)) {
       if (contract.language === "anchor") {
         surface.push(`${call.target}.${call.method}() — CPI to external program`)
+      } else if (isSuiMove) {
+        // Sui-specific attack surface
+        const shortTarget = call.target.split("::").pop()!
+        if (shortTarget === "transfer" && ["share_object", "public_share_object"].includes(call.method)) {
+          surface.push(`${call.target}::${call.method}() — SHARED OBJECT creation, concurrent access possible`)
+        } else if (shortTarget === "transfer" && ["transfer", "public_transfer"].includes(call.method)) {
+          surface.push(`${call.target}::${call.method}() — object ownership transfer`)
+        } else if (shortTarget === "dynamic_field" || shortTarget === "dynamic_object_field") {
+          surface.push(`${call.target}::${call.method}() — dynamic field operation, check key validation`)
+        } else if (shortTarget === "coin" && ["split", "join", "burn", "mint"].includes(call.method)) {
+          surface.push(`${call.target}::${call.method}() — coin manipulation, verify amounts`)
+        } else if (shortTarget === "clock") {
+          surface.push(`${call.target}::${call.method}() — timestamp dependency, check tolerance`)
+        } else if (shortTarget === "random") {
+          surface.push(`${call.target}::${call.method}() — on-chain randomness, ensure entry-only access`)
+        } else {
+          surface.push(`${call.target}::${call.method}() — cross-module call`)
+        }
       } else {
         surface.push(`${call.target}.${call.method}() — could callback into ${contractName}`)
       }

@@ -108,6 +108,71 @@ export const ContractInfoTool = Tool.define("contract-info", {
         }
       }
 
+      // Sui Move object analysis — the security-critical section
+      if (c.suiObjects?.length) {
+        lines.push("", "Object Analysis:")
+        for (const obj of c.suiObjects) {
+          const abStr = obj.abilities.length ? `has ${obj.abilities.join(", ")}` : "(no abilities — HOT POTATO)"
+          lines.push(`  ${obj.name}: ${abStr}`)
+
+          if (obj.fields.length) {
+            lines.push(`    Fields: ${obj.fields.map((f) => `${f.name}: ${f.type}`).join(", ")}`)
+          }
+
+          // Security warnings for ability combinations
+          if (obj.hasCopy && (obj.name.includes("Coin") || obj.name.includes("Token") || obj.name.includes("Balance"))) {
+            lines.push(`    !! CRITICAL: Asset type "${obj.name}" has \`copy\` — enables infinite duplication`)
+          }
+          if (obj.hasDrop && (obj.name.includes("Coin") || obj.name.includes("Token") || obj.name.includes("Balance"))) {
+            lines.push(`    !! CRITICAL: Asset type "${obj.name}" has \`drop\` — enables silent destruction`)
+          }
+          if (obj.hasDrop && (obj.name.includes("Receipt") || obj.name.includes("Loan") || obj.name.includes("Proof"))) {
+            lines.push(`    !! WARNING: Receipt/proof type "${obj.name}" has \`drop\` — hot potato pattern BROKEN, repayment not enforced`)
+          }
+          if (obj.hasStore && (obj.name.includes("Cap") || obj.name.includes("Admin") || obj.name.includes("Authority"))) {
+            lines.push(`    !! WARNING: Capability "${obj.name}" has \`store\` — can be transferred by anyone via public_transfer`)
+          }
+          if (obj.hasKey && !obj.hasStore) {
+            lines.push(`    -> Transfer restricted to defining module (key only, no store)`)
+          }
+          if (obj.hasKey && obj.hasStore) {
+            lines.push(`    -> Freely transferable by anyone (key + store)`)
+          }
+          if (!obj.hasKey && !obj.hasStore && !obj.hasCopy && !obj.hasDrop && obj.abilities.length === 0) {
+            lines.push(`    -> HOT POTATO: Must be consumed in same transaction, cannot be stored/dropped ✓`)
+          }
+        }
+      }
+
+      // Sui module-level info
+      if (c.suiModule) {
+        const sm = c.suiModule
+        lines.push("", "Module Info:")
+        lines.push(`  Init: ${sm.hasInit ? "yes" : "NO — no init function found"}`)
+        lines.push(`  OTW: ${sm.hasOTW ? `yes (${sm.otwType})` : "no"}`)
+
+        if (sm.capabilities.length) {
+          lines.push(`  Capabilities: ${sm.capabilities.join(", ")}`)
+        }
+        if (sm.sharedObjects.length) {
+          lines.push(`  Shared Objects: ${sm.sharedObjects.join(", ")}`)
+        }
+        if (sm.entryFunctions.length) {
+          lines.push(`  Entry Functions: ${sm.entryFunctions.join(", ")}`)
+        }
+        if (sm.dynamicFieldOps.length) {
+          lines.push(`  Dynamic Field Ops: ${sm.dynamicFieldOps.join(", ")}`)
+        }
+
+        // Module-level security warnings
+        if (sm.capabilities.length > 0 && !sm.hasInit) {
+          lines.push(`  !! WARNING: Module defines capabilities but has no init function — how are they created?`)
+        }
+        if (sm.capabilities.includes("TreasuryCap") && !sm.hasOTW) {
+          lines.push(`  !! WARNING: Uses TreasuryCap but no OTW pattern detected — coin may not be properly initialized`)
+        }
+      }
+
       if (c.events.length) lines.push("", `Events: ${c.events.join(", ")}`)
       if (c.errors.length) lines.push("", `Errors: ${c.errors.join(", ")}`)
       if (c.modifiers.length) lines.push("", `Modifiers: ${c.modifiers.join(", ")}`)

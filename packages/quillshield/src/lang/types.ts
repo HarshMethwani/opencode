@@ -11,6 +11,8 @@ export interface ContractMetadata {
   imports: string[]
   modifiers: string[]
   accounts?: AccountField[]
+  suiObjects?: SuiObjectInfo[]
+  suiModule?: SuiModuleInfo
 }
 
 export interface FunctionInfo {
@@ -60,6 +62,26 @@ export interface StorageVar {
   slot: number | string
   offset?: number
   size?: number
+}
+
+export interface SuiObjectInfo {
+  name: string
+  abilities: string[]
+  hasKey: boolean
+  hasStore: boolean
+  hasCopy: boolean
+  hasDrop: boolean
+  fields: { name: string; type: string }[]
+}
+
+export interface SuiModuleInfo {
+  hasInit: boolean
+  hasOTW: boolean
+  otwType: string | null
+  capabilities: string[]
+  sharedObjects: string[]
+  entryFunctions: string[]
+  dynamicFieldOps: string[]
 }
 
 export interface LanguageParser {
