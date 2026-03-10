@@ -7,7 +7,7 @@ import { Filesystem } from "../util/filesystem"
 
 export const ContractInfoTool = Tool.define("contract-info", {
   description:
-    "Parse a smart contract file and extract structured metadata: language, contract name, inheritance, function signatures, state variables, events, errors, external calls, and imports. For Anchor programs, also extracts account constraints, signer requirements, PDA seeds, and validation status per account.",
+    "Parse a smart contract file and extract structured metadata: language, contract name, inheritance, function signatures, state variables, events, errors, external calls, and imports. Supports Solidity (more languages coming).",
   parameters: z.object({
     path: z.string().describe("Path to the smart contract file"),
     language: z
@@ -36,7 +36,7 @@ export const ContractInfoTool = Tool.define("contract-info", {
     if (!parser) {
       return {
         title: `Unsupported: ${language}`,
-        output: `Parser not yet implemented for: ${language}. Currently supported: solidity, vyper, anchor, cosmwasm, move, cairo`,
+        output: `Parser not yet implemented for: ${language}. Currently supported: solidity`,
         metadata: {},
       }
     }
@@ -74,37 +74,6 @@ export const ContractInfoTool = Tool.define("contract-info", {
         for (const v of c.stateVariables) {
           const flags = [v.constant && "constant", v.immutable && "immutable"].filter(Boolean).join(" ")
           lines.push(`  ${v.type} ${v.visibility} ${flags} ${v.name}`.replace(/\s+/g, " ").trim())
-        }
-      }
-
-      // Anchor account constraints — the security-critical section
-      if (c.accounts?.length) {
-        lines.push("", "Account Validation:")
-        for (const a of c.accounts) {
-          const flags: string[] = []
-          if (a.isSigner) flags.push("SIGNER")
-          if (a.isMut) flags.push("MUT")
-          if (a.isInit) flags.push("INIT")
-          if (a.isClose) flags.push(`CLOSE(${a.isClose})`)
-          if (a.accountType === "unchecked") flags.push("!! UNCHECKED !!")
-
-          const flagStr = flags.length ? ` [${flags.join(", ")}]` : ""
-          lines.push(`  ${a.name}: ${a.type}${flagStr}`)
-
-          if (a.innerType) lines.push(`    -> Validated type: ${a.innerType}`)
-          if (a.hasOne.length) lines.push(`    -> has_one: ${a.hasOne.join(", ")}`)
-          if (a.seeds.length) {
-            lines.push(`    -> PDA seeds: [${a.seeds.join(", ")}]`)
-            lines.push(`    -> bump: ${a.hasBump ? "yes" : "NO BUMP - potential issue"}`)
-          }
-          if (a.constraints.length) {
-            for (const c of a.constraints) lines.push(`    -> constraint: ${c}`)
-          }
-
-          // Security warnings
-          if (a.accountType === "unchecked" && !a.constraints.length && !a.hasOne.length) {
-            lines.push(`    !! WARNING: Unvalidated account — no type check, no constraints`)
-          }
         }
       }
 
