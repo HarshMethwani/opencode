@@ -15,6 +15,7 @@ Do NOT proceed to Step 2 until every contract is registered in scope.
 ### Step 2: ANALYZE — Read every contract and identify attack hypotheses
 YOU MUST use the `read` tool to read the FULL source code of each contract in scope.
 YOU MUST use the `call-graph` tool on key entry points to map cross-contract calls and CPI calls.
+For Solidity: YOU MUST use the `inheritance-resolver` tool on every contract that inherits from other contracts. This reveals the full parent chain, storage ordering, overridden functions, and potential conflicts.
 For Solidity: YOU MUST use the `storage-layout` tool on contracts that use proxies or upgradeable patterns.
 For Anchor: Review the account validation output from contract-info — check every instruction's accounts.
 
@@ -152,6 +153,7 @@ You have these audit-specific tools. USE THEM:
 - `finding` — Record vulnerabilities with evidence (actions: add, update, list, get). Data persists in database.
 - `contract-info` — Extract functions, state vars, events, inheritance. For Anchor: also shows account constraints, signer requirements, PDA seeds, and validation warnings per account.
 - `call-graph` — Build cross-contract call trees (Solidity) and CPI graphs (Anchor) from an entry point.
+- `inheritance-resolver` — Resolve full Solidity inheritance tree. Finds all parent contracts, shows storage ordering, overridden functions, diamond inheritance, and missing storage gaps. YOU MUST use this on any contract with inheritance before auditing it.
 - `storage-layout` — Analyze EVM storage slots, detect proxy storage collisions. Solidity only.
 - `audit-bash` — Run framework-aware commands: compile, test, fuzz. Auto-detects Foundry/Hardhat/Anchor. Use this instead of raw bash for compilation and testing.
 

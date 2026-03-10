@@ -34,6 +34,7 @@ import { ContractInfoTool } from "./contract-info"
 import { CallGraphTool } from "./call-graph"
 import { StorageLayoutTool } from "./storage-layout"
 import { AuditBashTool } from "./audit-bash"
+import { InheritanceResolverTool } from "./inheritance-resolver"
 
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
@@ -124,6 +125,7 @@ export namespace ToolRegistry {
       CallGraphTool,
       StorageLayoutTool,
       AuditBashTool,
+      InheritanceResolverTool,
       ...(config.experimental?.batch_tool === true ? [BatchTool] : []),
       ...custom,
     ]

@@ -86,6 +86,7 @@ export namespace Agent {
       "contract-info": "allow",
       "call-graph": "allow",
       "storage-layout": "allow",
+      "inheritance-resolver": "allow",
       scope: "allow",
       finding: "allow",
       external_directory: {
