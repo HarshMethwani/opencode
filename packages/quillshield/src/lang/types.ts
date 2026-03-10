@@ -10,7 +10,6 @@ export interface ContractMetadata {
   errors: string[]
   imports: string[]
   modifiers: string[]
-  accounts?: AccountField[]
 }
 
 export interface FunctionInfo {
@@ -30,21 +29,6 @@ export interface StateVariable {
   immutable: boolean
 }
 
-export interface AccountField {
-  name: string
-  type: string
-  accountType: "signer" | "account" | "unchecked" | "program" | "system" | "other"
-  innerType?: string
-  isMut: boolean
-  isSigner: boolean
-  isInit: boolean
-  isClose: string | false
-  hasOne: string[]
-  seeds: string[]
-  hasBump: boolean
-  constraints: string[]
-}
-
 export interface ExternalCall {
   target: string
   method: string
@@ -58,8 +42,6 @@ export interface StorageVar {
   name: string
   type: string
   slot: number | string
-  offset?: number
-  size?: number
 }
 
 export interface LanguageParser {

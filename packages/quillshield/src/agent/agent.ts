@@ -79,6 +79,7 @@ export namespace Agent {
       grep: "allow",
       glob: "allow",
       list: "allow",
+      bash: "allow",
       read: "allow",
       webfetch: "allow",
       websearch: "allow",
@@ -101,13 +102,7 @@ export namespace Agent {
         description: "Full-access audit agent for interactive smart contract analysis",
         options: {},
         temperature: 0.3,
-        permission: PermissionNext.merge(
-          defaults,
-          PermissionNext.fromConfig({
-            "audit-bash": "allow",
-          }),
-          user,
-        ),
+        permission: PermissionNext.merge(defaults, user),
         mode: "primary",
         native: true,
       },
@@ -146,13 +141,7 @@ export namespace Agent {
         description: "Write and run proof-of-concept exploit code to verify findings",
         options: {},
         prompt: PROMPT_EXPLOIT,
-        permission: PermissionNext.merge(
-          defaults,
-          PermissionNext.fromConfig({
-            "audit-bash": "allow",
-          }),
-          user,
-        ),
+        permission: PermissionNext.merge(defaults, user),
         mode: "subagent",
         native: true,
       },
