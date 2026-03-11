@@ -35,6 +35,10 @@ import { CallGraphTool } from "./call-graph"
 import { StorageLayoutTool } from "./storage-layout"
 import { AuditBashTool } from "./audit-bash"
 import { InheritanceResolverTool } from "./inheritance-resolver"
+import { AuthSurfaceTool } from "./auth-surface"
+import { StateFlowTool } from "./state-flow"
+import { ValueFlowTool } from "./value-flow"
+import { UpgradeCheckTool } from "./upgrade-check"
 
 export namespace ToolRegistry {
   const log = Log.create({ service: "tool.registry" })
@@ -126,6 +130,10 @@ export namespace ToolRegistry {
       StorageLayoutTool,
       AuditBashTool,
       InheritanceResolverTool,
+      AuthSurfaceTool,
+      StateFlowTool,
+      ValueFlowTool,
+      UpgradeCheckTool,
       ...(config.experimental?.batch_tool === true ? [BatchTool] : []),
       ...custom,
     ]

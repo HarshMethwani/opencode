@@ -4,6 +4,94 @@ import { Tool } from "./tool"
 import { Instance } from "../project/instance"
 import { detectLanguage, getParser } from "../lang"
 import { Filesystem } from "../util/filesystem"
+import { analyzeProject, findContractsByPath } from "../solidity"
+
+async function solidityOutput(filepath: string, raw: string) {
+  const ir = await analyzeProject(path.dirname(filepath))
+  const contracts = findContractsByPath(ir, filepath)
+  if (!contracts.length) {
+    return {
+      title: "No contracts found",
+      output: `No contract declarations found in: ${raw}`,
+      metadata: {},
+    }
+  }
+
+  const calls = contracts.flatMap((contract) =>
+    contract.functions.flatMap((fn) =>
+      fn.calls.map((call) => ({
+        contract: contract.name,
+        fn: fn.name,
+        call,
+      })),
+    ),
+  )
+
+  const lines = [`File: ${raw}`, "Language: solidity", `Contracts: ${contracts.length}`, ""]
+
+  contracts.forEach((contract) => {
+    lines.push(`=== ${contract.kind.toUpperCase()}: ${contract.name} ===`)
+    if (contract.bases.length) lines.push(`Inherits: ${contract.bases.join(", ")}`)
+    if (contract.linearized_bases.length) lines.push(`Linearized: ${contract.linearized_bases.join(" -> ")}`)
+    if (contract.proxies.length) lines.push(`Upgradeability: ${contract.proxies.map((item) => item.note).join("; ")}`)
+
+    if (contract.functions.length) {
+      lines.push("", "Functions:")
+      contract.functions.forEach((fn) => {
+        const mods = fn.modifiers.length ? ` [${fn.modifiers.join(", ")}]` : ""
+        const ret = fn.returns.length ? ` -> (${fn.returns.join(", ")})` : ""
+        const selector = fn.selector ? ` selector=${fn.selector}` : ""
+        lines.push(`  ${fn.visibility} ${fn.name}(${fn.parameters.join(", ")}) ${fn.mutability}${mods}${ret}${selector}`)
+        if (fn.auth.length) lines.push(`    auth: ${fn.auth.map((item) => item.label).join(", ")}`)
+        if (fn.reads.length) lines.push(`    reads: ${fn.reads.join(", ")}`)
+        if (fn.writes.length) lines.push(`    writes: ${fn.writes.join(", ")}`)
+      })
+    }
+
+    if (contract.state.length) {
+      lines.push("", "State Variables:")
+      contract.state.forEach((state) => {
+        const flags = [state.constant && "constant", state.immutable && "immutable"].filter(Boolean).join(" ")
+        lines.push(`  ${state.type} ${state.visibility} ${flags} ${state.name}`.replace(/\s+/g, " ").trim())
+      })
+    }
+
+    if (contract.storage.length) {
+      lines.push("", "Storage Layout:")
+      contract.storage.forEach((slot) => {
+        lines.push(`  slot ${slot.slot}:${slot.offset} ${slot.type} ${slot.label}`)
+      })
+    }
+
+    if (contract.events.length) lines.push("", `Events: ${contract.events.join(", ")}`)
+    if (contract.errors.length) lines.push("", `Errors: ${contract.errors.join(", ")}`)
+    if (contract.modifiers.length) lines.push("", `Modifiers: ${contract.modifiers.map((item) => item.name).join(", ")}`)
+    lines.push("")
+  })
+
+  if (calls.length) {
+    lines.push("External Calls:")
+    calls.forEach(({ contract, fn, call }) => {
+      const tag =
+        call.kind === "delegatecall"
+          ? " [DELEGATECALL]"
+          : call.kind === "staticcall"
+            ? " [STATICCALL]"
+            : call.kind === "low-level"
+              ? " [LOW-LEVEL]"
+              : call.kind === "eth-transfer"
+                ? " [ETH]"
+                : ""
+      lines.push(`  L${call.line ?? "?"}: ${contract}.${fn} -> ${(call.target_contract ?? call.target ?? "unknown")}.${call.method}()${tag}`)
+    })
+  }
+
+  return {
+    title: `${contracts.length} contract(s) in ${path.basename(filepath)}`,
+    output: lines.join("\n"),
+    metadata: {},
+  }
+}
 
 export const ContractInfoTool = Tool.define("contract-info", {
   description:
@@ -30,6 +118,11 @@ export const ContractInfoTool = Tool.define("contract-info", {
         output: `Could not detect smart contract language for: ${filepath}. Supported: solidity, vyper, anchor, cosmwasm, move, cairo`,
         metadata: {},
       }
+    }
+
+    if (language === "solidity") {
+      const result = await solidityOutput(filepath, args.path).catch(() => undefined)
+      if (result) return result
     }
 
     const parser = getParser(language)

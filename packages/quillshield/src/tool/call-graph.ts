@@ -5,6 +5,53 @@ import { Instance } from "../project/instance"
 import { detectLanguage, getParser } from "../lang"
 import { Filesystem } from "../util/filesystem"
 import { Glob } from "../util/glob"
+import { analyzeProject, findContract } from "../solidity"
+import type { ContractIR } from "../solidity/ir"
+
+function solidityTree(contracts: ContractIR[], contract: ContractIR, functionName: string, depth: number, maxDepth: number, seen: Set<string>): string[] {
+  const key = `${contract.name}.${functionName}`
+  const indent = "  ".repeat(depth)
+  if (seen.has(key)) return [`${indent}-> ${key}() [RECURSIVE]`]
+  if (depth >= maxDepth) return [`${indent}-> ${key}() [MAX DEPTH]`]
+
+  const fn = contract.functions.find((item) => item.name === functionName)
+  if (!fn) return [`${indent}-> ${key}() [NOT FOUND]`]
+
+  seen.add(key)
+  const lines = [`${indent}${depth === 0 ? "" : "-> "}${key}()`]
+  fn.calls.forEach((call) => {
+    const target = call.target_contract ? contracts.find((item) => item.name === call.target_contract) : undefined
+    if (!target) {
+      const tag =
+        call.kind === "delegatecall"
+          ? " [DELEGATECALL]"
+          : call.kind === "staticcall"
+            ? " [STATICCALL]"
+            : call.kind === "low-level"
+              ? " [LOW-LEVEL]"
+              : call.kind === "eth-transfer"
+                ? " [ETH]"
+                : ""
+      lines.push(`${indent}  -> ${(call.target_contract ?? call.target ?? "unknown")}.${call.method}()${tag} (L${call.line ?? "?"}) [external]`)
+      return
+    }
+    lines.push(...solidityTree(contracts, target, call.method, depth + 1, maxDepth, seen))
+  })
+  seen.delete(key)
+  return lines
+}
+
+function soliditySurface(contract: ContractIR, functionName: string) {
+  const fn = contract.functions.find((item) => item.name === functionName)
+  if (!fn) return []
+  return fn.calls.flatMap((call) => {
+    if (call.kind === "delegatecall") return [`${call.method} at L${call.line ?? "?"} — delegatecall into attacker-controlled code is possible if target is mutable`]
+    if (call.kind === "low-level") return [`${call.method} at L${call.line ?? "?"} — low-level external call, full callback surface`]
+    if (call.kind === "eth-transfer") return [`${call.method} at L${call.line ?? "?"} — ETH transfer/external control handoff`]
+    if (call.kind === "external" && !call.target_contract) return [`${call.target ?? "external"}.${call.method} at L${call.line ?? "?"} — external callback surface`]
+    return []
+  })
+}
 
 export const CallGraphTool = Tool.define("call-graph", {
   description:
@@ -23,6 +70,34 @@ export const CallGraphTool = Tool.define("call-graph", {
         ? args.directory
         : path.resolve(Instance.directory, args.directory)
       : Instance.directory
+
+    const ir = await analyzeProject(searchDir).catch(() => undefined)
+    if (ir) {
+      const parts = args.entryPoint.split(".")
+      const contract = parts.length === 2 ? findContract(ir, { name: parts[0] }) : ir.contracts.find((item) => item.functions.some((fn) => fn.name === parts[0]))
+      const fn = parts.length === 2 ? parts[1]! : parts[0]!
+      if (contract) {
+        const tree = solidityTree(ir.contracts, contract, fn, 0, maxDepth, new Set())
+        const lines = [
+          `Call Graph: ${contract.name}.${fn}()`,
+          "Language: solidity",
+          `Depth: ${maxDepth}`,
+          `Contracts analyzed: ${ir.contracts.length}`,
+          "",
+          ...tree,
+        ]
+        const surface = soliditySurface(contract, fn)
+        if (surface.length) {
+          lines.push("", "Reentrancy Surface:")
+          surface.forEach((entry) => lines.push(`  ${entry}`))
+        }
+        return {
+          title: `Call graph: ${contract.name}.${fn}`,
+          output: lines.join("\n"),
+          metadata: {},
+        }
+      }
+    }
 
     // Find all contract files — Solidity, Rust, and Move
     const files = Glob.scanSync("**/*.{sol,rs,move}", {

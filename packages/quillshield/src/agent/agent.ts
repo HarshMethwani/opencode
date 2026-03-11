@@ -87,6 +87,10 @@ export namespace Agent {
       "call-graph": "allow",
       "storage-layout": "allow",
       "inheritance-resolver": "allow",
+      "auth-surface": "allow",
+      "state-flow": "allow",
+      "value-flow": "allow",
+      "upgrade-check": "allow",
       scope: "allow",
       finding: "allow",
       external_directory: {

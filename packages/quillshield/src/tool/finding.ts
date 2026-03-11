@@ -23,6 +23,27 @@ export interface Finding {
   createdAt: number
 }
 
+function validateFinding(input: Omit<Finding, "createdAt" | "id">) {
+  if (input.status === "confirmed" && input.confidence === "low") {
+    return "Confirmed findings require at least medium confidence."
+  }
+  if (input.status === "confirmed" && input.locations.length === 0) {
+    return "Confirmed findings require at least one code location."
+  }
+  if (input.status === "confirmed" && input.trace.length === 0) {
+    return "Confirmed findings require a non-empty execution trace."
+  }
+  if (input.confidence === "high" && input.trace.length === 0 && !input.pocFile) {
+    return "High confidence requires a trace or a PoC file."
+  }
+  if (input.pocStatus === "passing" && !input.pocFile) {
+    return "Passing PoC status requires a PoC file path."
+  }
+  if (input.pocStatus === "passing" && input.confidence === "low") {
+    return "Passing PoC status requires at least medium confidence."
+  }
+}
+
 function fromRow(row: typeof FindingTable.$inferSelect): Finding {
   return {
     id: row.id,
@@ -100,6 +121,24 @@ export const FindingTool = Tool.define("finding", {
       case "add": {
         if (!args.title || !args.severity)
           return { title: "Error", output: "Title and severity are required for add action", metadata: {} }
+        const next = {
+          severity: args.severity,
+          title: args.title,
+          description: args.description ?? "",
+          impact: args.impact ?? "",
+          contracts: args.contracts ?? [],
+          status: "draft" as const,
+          pocStatus: "none" as const,
+          recommendation: args.recommendation ?? "",
+          confidence: args.confidence ?? "medium",
+          invariant: args.invariant ?? "",
+          locations: args.locations ?? [],
+          trace: args.trace ?? [],
+          pocFile: args.poc_file ?? "",
+          category: args.category ?? "",
+        }
+        const invalid = validateFinding(next)
+        if (invalid) return { title: "Error", output: invalid, metadata: {} }
         const id = ulid()
         Database.use((db) =>
           db
@@ -107,20 +146,20 @@ export const FindingTool = Tool.define("finding", {
             .values({
               id,
               session_id: ctx.sessionID,
-              severity: args.severity!,
-              title: args.title!,
-              description: args.description ?? "",
-              impact: args.impact ?? "",
-              contracts: args.contracts ?? [],
-              status: "draft",
-              poc_status: "none",
-              recommendation: args.recommendation ?? "",
-              confidence: args.confidence ?? "medium",
-              invariant: args.invariant ?? "",
-              locations: args.locations ?? [],
-              trace: args.trace ?? [],
-              poc_file: args.poc_file ?? "",
-              category: args.category ?? "",
+              severity: next.severity,
+              title: next.title,
+              description: next.description,
+              impact: next.impact,
+              contracts: next.contracts,
+              status: next.status,
+              poc_status: next.pocStatus,
+              recommendation: next.recommendation,
+              confidence: next.confidence,
+              invariant: next.invariant,
+              locations: next.locations,
+              trace: next.trace,
+              poc_file: next.pocFile,
+              category: next.category,
             })
             .run(),
         )
@@ -163,11 +202,31 @@ export const FindingTool = Tool.define("finding", {
         if (args.trace) updates.trace = args.trace
         if (args.poc_file) updates.poc_file = args.poc_file
         if (args.category) updates.category = args.category
+        const next = fromRow({
+          ...row,
+          ...updates,
+        } as typeof row)
+        const invalid = validateFinding({
+          severity: next.severity,
+          title: next.title,
+          description: next.description,
+          impact: next.impact,
+          contracts: next.contracts,
+          status: next.status,
+          pocStatus: next.pocStatus,
+          recommendation: next.recommendation,
+          confidence: next.confidence,
+          invariant: next.invariant,
+          locations: next.locations,
+          trace: next.trace,
+          pocFile: next.pocFile,
+          category: next.category,
+        })
+        if (invalid) return { title: "Error", output: invalid, metadata: {} }
         Database.use((db) => db.update(FindingTable).set(updates).where(eq(FindingTable.id, args.id!)).run())
-        const updated = fromRow({ ...row, ...updates } as typeof row)
         return {
-          title: `Updated: ${updated.title}`,
-          output: `Finding updated: ${updated.id}\n[${updated.severity.toUpperCase()}] ${updated.title}\nStatus: ${updated.status} | PoC: ${updated.pocStatus} | Confidence: ${updated.confidence}`,
+          title: `Updated: ${next.title}`,
+          output: `Finding updated: ${next.id}\n[${next.severity.toUpperCase()}] ${next.title}\nStatus: ${next.status} | PoC: ${next.pocStatus} | Confidence: ${next.confidence}`,
           metadata: {},
         }
       }

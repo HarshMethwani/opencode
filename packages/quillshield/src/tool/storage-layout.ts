@@ -2,110 +2,73 @@ import z from "zod"
 import path from "path"
 import { Tool } from "./tool"
 import { Instance } from "../project/instance"
-import { detectLanguage, getParser } from "../lang"
-import { Filesystem } from "../util/filesystem"
+import { analyzeProject, findContract, findContractsByPath } from "../solidity"
 
 export const StorageLayoutTool = Tool.define("storage-layout", {
   description:
-    "Analyze the storage variable layout of a Solidity contract. Shows slot assignments with correct EVM packing, detects potential proxy storage collisions, and identifies mapping/array storage patterns. EVM-specific.",
+    "Analyze the storage variable layout of a Solidity contract using compiler storage metadata. Shows slot assignments, upgrade gaps, and proxy collision risks.",
   parameters: z.object({
     path: z.string().describe("Path to the Solidity contract file"),
-    proxy_implementation: z
-      .string()
-      .optional()
-      .describe("Path to implementation contract (for proxy collision detection)"),
+    contract: z.string().optional().describe("Specific contract name in the file"),
+    proxy_implementation: z.string().optional().describe("Path to implementation contract (for proxy collision detection)"),
   }),
-  async execute(args, ctx) {
+  async execute(args) {
     const filepath = path.isAbsolute(args.path) ? args.path : path.resolve(Instance.directory, args.path)
+    const ir = await analyzeProject(path.dirname(filepath))
+    const target =
+      findContract(ir, { file: filepath, name: args.contract }) ??
+      findContractsByPath(ir, filepath)[0]
 
-    const content = await Filesystem.readText(filepath).catch(() => undefined)
-    if (!content) {
-      return { title: "Error", output: `File not found: ${filepath}`, metadata: {} }
-    }
-
-    const language = detectLanguage(filepath, content)
-    if (language !== "solidity") {
+    if (!target) {
       return {
-        title: "EVM only",
-        output: "Storage layout analysis is only available for Solidity contracts (EVM storage model).",
+        title: "Not found",
+        output: `No Solidity contracts from compiler output matched: ${args.path}`,
         metadata: {},
       }
     }
 
-    const parser = getParser("solidity")!
-    const contracts = parser.extractMetadata(content)
-    const storageVars = parser.extractStorage(content)
+    const lines = [`Storage Layout: ${target.name}`, "", "Slot | Offset | Bytes | Type                    | Name", "-----|--------|-------|-------------------------|-----"]
 
-    const lines: string[] = [`Storage Layout: ${path.basename(filepath)}`, ""]
+    target.storage.forEach((slot) => {
+      const type = slot.type.length > 24 ? `${slot.type.slice(0, 21)}...` : slot.type.padEnd(24)
+      lines.push(`${slot.slot.padStart(4)} | ${String(slot.offset).padStart(6)} | ${String(slot.bytes ?? 32).padStart(5)} | ${type} | ${slot.label}`)
+    })
 
-    lines.push("Slot | Offset | Size | Type                    | Name")
-    lines.push("-----|--------|------|-------------------------|-----")
+    lines.push("", `Total storage entries: ${target.storage.length}`)
 
-    for (const v of storageVars) {
-      const displayType = v.type.length > 24 ? v.type.slice(0, 21) + "..." : v.type.padEnd(24)
-      const offset = v.offset ?? 0
-      const size = v.size ?? 32
-
-      lines.push(
-        `${String(v.slot).padStart(4)} | ${String(offset).padStart(6)} | ${String(size).padStart(4)} | ${displayType} | ${v.name}`,
-      )
-
-      if (v.type.startsWith("mapping")) {
-        lines.push(`     |        |      | -> values at keccak256(key, ${v.slot})`)
-      } else if (v.type.includes("[]")) {
-        lines.push(`     |        |      | -> elements at keccak256(${v.slot}), length at slot ${v.slot}`)
-      }
+    if (target.proxies.length) {
+      lines.push("", "Upgrade Signals:")
+      target.proxies.forEach((item) => lines.push(`  ${item.note}`))
     }
 
-    const lastVar = storageVars[storageVars.length - 1]
-    const totalSlots = lastVar ? (typeof lastVar.slot === "number" ? lastVar.slot + 1 : 0) : 0
-    lines.push("", `Total storage slots used: ${totalSlots}`)
-
-    // Proxy collision detection
     if (args.proxy_implementation) {
       const implPath = path.isAbsolute(args.proxy_implementation)
         ? args.proxy_implementation
         : path.resolve(Instance.directory, args.proxy_implementation)
-
-      const implContent = await Filesystem.readText(implPath).catch(() => undefined)
-      if (implContent) {
-        const implStorage = parser.extractStorage(implContent)
-        lines.push("", "Proxy Storage Collision Analysis:")
-
-        const maxCheck = Math.min(storageVars.length, implStorage.length)
-        let collisions = 0
-        for (let i = 0; i < maxCheck; i++) {
-          const proxyVar = storageVars[i]!
-          const implVar = implStorage[i]!
-          if (proxyVar.slot === implVar.slot && (proxyVar.type !== implVar.type || proxyVar.name !== implVar.name)) {
-            collisions++
-            lines.push(
-              `  COLLISION at slot ${proxyVar.slot}: proxy has '${proxyVar.type} ${proxyVar.name}', impl has '${implVar.type} ${implVar.name}'`,
-            )
+      const implementation = findContractsByPath(ir, implPath)[0]
+      if (!implementation) {
+        lines.push("", `Implementation not found in compiler output: ${args.proxy_implementation}`)
+      } else {
+        const collisions = target.storage.flatMap((slot, idx) => {
+          const other = implementation.storage[idx]
+          if (!other) return []
+          if (slot.slot === other.slot && (slot.type !== other.type || slot.label !== other.label)) {
+            return [`  slot ${slot.slot}: proxy has '${slot.type} ${slot.label}', implementation has '${other.type} ${other.label}'`]
           }
-        }
-        if (collisions === 0) lines.push("  No storage collisions detected.")
+          return []
+        })
+        lines.push("", "Proxy Storage Collision Analysis:")
+        if (!collisions.length) lines.push("  No storage collisions detected.")
+        collisions.forEach((entry) => lines.push(entry))
       }
     }
 
-    // Known dangerous patterns
-    const warnings: string[] = []
-    for (const contract of contracts) {
-      if (contract.inherits.some((i) => i.includes("Upgradeable") || i.includes("Proxy"))) {
-        const hasGap = storageVars.some((v) => v.name.includes("gap") || v.name.includes("__gap"))
-        if (!hasGap) {
-          warnings.push("Upgradeable contract without storage gap — risk of slot collision on upgrade")
-        }
-      }
-    }
-
-    if (warnings.length) {
-      lines.push("", "Warnings:")
-      for (const w of warnings) lines.push(`  ! ${w}`)
+    if (target.proxies.length && !target.storage.some((slot) => /__gap|gap/.test(slot.label))) {
+      lines.push("", "Warnings:", "  ! Upgradeable contract without storage gap — future upgrades can collide with existing slots")
     }
 
     return {
-      title: `Storage: ${totalSlots} slots`,
+      title: `Storage: ${target.storage.length} entries`,
       output: lines.join("\n"),
       metadata: {},
     }

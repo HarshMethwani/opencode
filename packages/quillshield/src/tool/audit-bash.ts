@@ -6,6 +6,15 @@ import path from "path"
 import fs from "fs/promises"
 
 type Framework = "foundry" | "hardhat" | "anchor" | "move" | "sui-move" | "unknown"
+type Meta = {
+  exitCode: number
+  framework: Framework
+  requested: string
+  command: string
+  passed: boolean
+  failed: boolean
+  category: "compile" | "test" | "fuzz" | "shell"
+}
 
 async function detectFramework(directory: string): Promise<Framework> {
   const checks = [
@@ -59,6 +68,24 @@ export const AuditBashTool = Tool.define("audit-bash", {
     const timeout = args.timeout ?? 120_000
 
     let command = args.command
+    const requested = args.command
+    const category =
+      requested === "compile" || requested === "build"
+        ? "compile"
+        : requested.startsWith("test")
+          ? "test"
+          : requested === "fuzz"
+            ? "fuzz"
+            : "shell"
+    const meta = (exitCode: number, command: string, framework: Framework): Meta => ({
+      exitCode,
+      framework,
+      requested,
+      command,
+      passed: exitCode === 0,
+      failed: exitCode !== 0,
+      category,
+    })
 
     // Expand shortcuts
     if (command === "compile" || command === "build") {
@@ -79,7 +106,7 @@ export const AuditBashTool = Tool.define("audit-bash", {
           command = "aptos move compile"
           break
         default:
-          return { title: "Error", output: `Cannot compile: no framework detected in ${cwd}`, metadata: { exitCode: 1 } }
+          return { title: "Error", output: `Cannot compile: no framework detected in ${cwd}`, metadata: meta(1, command, framework) }
       }
     } else if (command.startsWith("test")) {
       // Support "test" and "test <filter>"
@@ -101,7 +128,7 @@ export const AuditBashTool = Tool.define("audit-bash", {
           command = filter ? `aptos move test --filter ${filter}` : "aptos move test"
           break
         default:
-          return { title: "Error", output: `Cannot test: no framework detected in ${cwd}`, metadata: { exitCode: 1 } }
+          return { title: "Error", output: `Cannot test: no framework detected in ${cwd}`, metadata: meta(1, command, framework) }
       }
     } else if (command === "fuzz") {
       switch (framework) {
@@ -112,7 +139,7 @@ export const AuditBashTool = Tool.define("audit-bash", {
           return {
             title: "Error",
             output: `Fuzzing only supported for Foundry. Detected framework: ${framework}`,
-            metadata: { exitCode: 1 },
+            metadata: meta(1, command, framework),
           }
       }
     }
@@ -160,7 +187,7 @@ export const AuditBashTool = Tool.define("audit-bash", {
     return {
       title: exitCode === 0 ? `OK: ${command}` : `FAIL(${exitCode}): ${command}`,
       output: lines.join("\n"),
-      metadata: { exitCode },
+      metadata: meta(exitCode, command, framework),
     }
   },
 })
